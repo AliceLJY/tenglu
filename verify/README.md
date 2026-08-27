@@ -6,8 +6,9 @@
 
 - `groundtruth.json` — 微信数据库导出的标准答案（44 条消息）
 - `expected_output.md` — 算法还原出的结果，字符级 93.7%
-- `expected_long.jpg` — 拼接出的长图
 - 测试用的 `.mp4` 录屏
+
+（跑基准产生的长图在 `verify/out/`，同样被忽略。）
 
 它们在本地存在（Alice 的机器上），验收时直接用。**不要想办法把它们弄进仓库**，这个仓将来可能公开。
 
@@ -32,7 +33,6 @@ node run-node.js /tmp/frames 4 wechat
 期望输出：
 
 ```
-滚动区 y154~1522 (高 1368)
 [wechat] 预扫 12 帧 → 滚动区 y154~1522 (高 1368)
 108 帧 → 关键帧 6 张，丢弃回弹帧 4
 长图 720x5107 → out/long_node.bmp (10.5 MB)

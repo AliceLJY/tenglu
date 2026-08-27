@@ -2,7 +2,7 @@
  * 基准复现：在 Node 里跑与 app 完全相同的算法，产出 long_node.bmp。
  * codex 移植到 RN 后用同一段录屏比对，长图高度差应 <5px。
  *
- *   node verify/run-node.js <帧目录> <抽帧fps>
+ *   node verify/run-node.js <帧目录> <抽帧fps> [wechat|xiaohongshu|generic]
  *
  * 计时口径与 M1 任务书第八节一致，六个阶段互不重叠：
  *   预扫 / 取帧与位移 / 拼接 / BMP编码 / (OCR 在 app 侧) / 总耗时
@@ -21,7 +21,7 @@ const dec = i => j.decode(fs.readFileSync(path.join(dir, all[i])), { useTArray: 
 const T = {};
 const tAll = Date.now();
 
-// ---- 阶段一：预扫（24 次取帧 + 解码 + 灰度 + 滚动区检测）----
+// ---- 阶段一：预扫（PRESETS[app].preScan 次取帧 + 解码 + 灰度 + 滚动区检测）----
 let t = Date.now();
 const N = preset.preScan;
 const pre = Array.from({ length: N }, (_, i) => Math.round((i * (all.length - 1)) / (N - 1))).map(dec);
@@ -77,3 +77,4 @@ console.log(`${all.length} 帧 → 关键帧 ${keep.length} 张` + (dropped ? `�
 console.log(`长图 ${out.width}x${out.height} → out/long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
 console.log(`耗时 ms: ${JSON.stringify(T)}`);
 console.log(`  其中取帧+解码 ${grabMs}ms / ${grabN} 次（含在「取帧与位移」内）`);
+(out.warnings || []).forEach(x => console.log("  ⚠", x));   // 与 app 同裁定：告警必须可见
