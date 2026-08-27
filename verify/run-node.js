@@ -62,13 +62,18 @@ T.拼接 = Date.now() - t;
 // ---- 阶段四：BMP 编码（无损；不要用 jpeg-js 编码）----
 t = Date.now();
 const bmp = S.encodeBMP(out.canvas, out.width, out.height);
-fs.writeFileSync(path.join(__dirname, "long_node.bmp"), Buffer.from(bmp));
+const outDir = path.join(__dirname, "out");
+fs.mkdirSync(outDir, { recursive: true });
+// 产物一律落 verify/out/ —— 该目录整个被 gitignore。
+// 2026-08-28 事故：长图曾因 .gitignore 按文件名写死（long_node.jpg）而在改成 BMP 后
+// 混进三个 commit。现在双保险：按类型拦 + 独立忽略目录。
+fs.writeFileSync(path.join(outDir, "long_node.bmp"), Buffer.from(bmp));
 T.BMP编码 = Date.now() - t;
 
 T.总耗时 = Date.now() - tAll;
 
 console.log(`[${app}] 预扫 ${N} 帧 → 滚动区 y${top}~${bottom} (高 ${vh})`);
 console.log(`${all.length} 帧 → 关键帧 ${keep.length} 张` + (dropped ? `，丢弃回弹帧 ${dropped}` : "") + (tooFar ? `  ⚠ ${tooFar} 处滑动过快、两帧间无重叠，该段内容已丢失` : ""));
-console.log(`长图 ${out.width}x${out.height} → long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
+console.log(`长图 ${out.width}x${out.height} → out/long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
 console.log(`耗时 ms: ${JSON.stringify(T)}`);
 console.log(`  其中取帧+解码 ${grabMs}ms / ${grabN} 次（含在「取帧与位移」内）`);

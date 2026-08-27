@@ -21,5 +21,6 @@ dist/
 *.mov
 verify/groundtruth.json
 verify/expected_output.md
+verify/out/
 verify/frames/
 verify/*.md.out
