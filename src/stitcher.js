@@ -245,7 +245,34 @@ const PRESETS = {
   generic:     { preScan: 24, mode: "plain"  },   // 不确定就用它，多花约 12 次抽帧
 };
 
-module.exports = { PRESETS, encodeBMP, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
+/**
+ * 输出层去重：拼接产生的重影会让同一段内容出现两次。
+ *
+ * 设计原则（Alice 定的）：**拼接层宁可多不可少 —— 重复能去掉，丢失补不回来。**
+ * 所以位移估计偏保守、宁可多贴一帧，重叠部分交给这里收拾。
+ *
+ * 只去"长行 + 近距离"的重复：
+ *   - 短行不动（"哈哈哈""真的""是的"在真实对话里本来就会重复出现）
+ *   - 窗口限定在最近 WINDOW 行内（重影总是近距离的；隔了几百行的相同长句更可能是真内容）
+ *
+ * 实测小红书那段：191 行 → 去掉 12 组重影 → 179 行，与逐帧全量基线 183 行同一量级。
+ */
+function dedupeLines(lines, opts = {}) {
+  const MINLEN = opts.minLen ?? 8;
+  const WINDOW = opts.window ?? 40;
+  const out = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.length >= MINLEN) {
+      const from = Math.max(0, out.length - WINDOW);
+      if (out.slice(from).some(x => x.trim() === t)) continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+module.exports = { PRESETS, encodeBMP, dedupeLines, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
 
 /**
  * 边抽边验：app 里的正式取帧策略。

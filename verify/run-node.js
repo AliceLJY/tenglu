@@ -32,41 +32,43 @@ const { top, bottom } = reg;
 const vh = bottom - top;
 T.预扫 = Date.now() - t;
 
-// ---- 阶段二：试探取帧（walkKeyframes 全程，含其内部每次取帧+解码）----
+// ---- 阶段二：取帧（固定间隔全取 + 逐帧位移）----
+// 主路径就是"按固定 fps 全取"，不做试探。理由是 Alice 的判断：
+//   滚动快 = 用户认为那段不重要（快速划过正文），滚动慢 = 重要（评论区）。
+//   所以不需要精确控制每帧的位移落点 —— 快滑段丢一点正是用户想丢的，
+//   慢滑段重叠多也无所谓，重复交给输出层 dedupeLines() 收拾。
+// 试探取帧（walkKeyframes）作为省抽帧成本的优化留到 M2，它在
+// "前段静止后段猛滑"的素材上找不到落点，见 PLAN.md「已知限制」。
 let grabMs = 0, grabN = 0;
-const grab = async ms => {
+t = Date.now();
+const imgs = [];
+for (let i = 0; i < all.length; i++) {
   const g0 = Date.now();
-  const im = dec(Math.min(all.length - 1, Math.max(0, Math.round((ms / 1000) * FPS))));
-  const r = S.cropRows(im.data, w, top, bottom);
+  imgs.push(dec(i));
   grabMs += Date.now() - g0; grabN++;
-  return r;
-};
+}
+const regions = imgs.map(im => S.cropRows(im.data, w, top, bottom));
+const grays = regions.map(r => S.toGray(r, w, vh));
+const shifts = [];
+for (let i = 0; i < grays.length - 1; i++) shifts.push(S.estimateShift(grays[i], grays[i + 1], w, vh));
+const { keep, dropped, tooFar } = S.pickKeyframes(shifts, vh);
+T.取帧与位移 = Date.now() - t;
 
-(async () => {
-  t = Date.now();
-  const { frames, times, probes, warnings } = await S.walkKeyframes(grab, DUR, w, vh);
-  T.试探取帧 = Date.now() - t;
+// ---- 阶段三：拼接 ----
+t = Date.now();
+const out = S.stitch(regions, keep, w, vh);
+T.拼接 = Date.now() - t;
 
-  // ---- 阶段三：拼接 ----
-  // walkKeyframes 返回的 frames 全部是已确认的关键帧，这里传 identity indices。
-  // 不要再调 pickKeyframes —— 那是给"已有完整帧序列"的旧路径用的，
-  // 在这里二次筛帧会偏离基准。
-  t = Date.now();
-  const out = S.stitch(frames, frames.map((_, i) => i), w, vh);
-  T.拼接 = Date.now() - t;
+// ---- 阶段四：BMP 编码（无损；不要用 jpeg-js 编码）----
+t = Date.now();
+const bmp = S.encodeBMP(out.canvas, out.width, out.height);
+fs.writeFileSync(path.join(__dirname, "long_node.bmp"), Buffer.from(bmp));
+T.BMP编码 = Date.now() - t;
 
-  // ---- 阶段四：BMP 编码（无损；不要用 jpeg-js 编码）----
-  t = Date.now();
-  const bmp = S.encodeBMP(out.canvas, out.width, out.height);
-  fs.writeFileSync(path.join(__dirname, "long_node.bmp"), Buffer.from(bmp));
-  T.BMP编码 = Date.now() - t;
+T.总耗时 = Date.now() - tAll;
 
-  T.总耗时 = Date.now() - tAll;
-
-  console.log(`[${app}] 预扫 ${N} 帧 → 滚动区 y${top}~${bottom} (高 ${vh})`);
-  console.log(`探测 ${probes} 次 → 关键帧 ${frames.length} 张 @ ${times.map(x => (x / 1000).toFixed(1) + "s").join(" ")}`);
-  console.log(`长图 ${out.width}x${out.height} → long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
-  console.log(`耗时 ms: ${JSON.stringify(T)}`);
-  console.log(`  其中取帧+解码 ${grabMs}ms / ${grabN} 次（含在「试探取帧」内）`);
-  warnings.forEach(x => console.log("  ⚠", x));
-})();
+console.log(`[${app}] 预扫 ${N} 帧 → 滚动区 y${top}~${bottom} (高 ${vh})`);
+console.log(`${all.length} 帧 → 关键帧 ${keep.length} 张` + (dropped ? `，丢弃回弹帧 ${dropped}` : "") + (tooFar ? `  ⚠ ${tooFar} 处滑动过快、两帧间无重叠，该段内容已丢失` : ""));
+console.log(`长图 ${out.width}x${out.height} → long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
+console.log(`耗时 ms: ${JSON.stringify(T)}`);
+console.log(`  其中取帧+解码 ${grabMs}ms / ${grabN} 次（含在「取帧与位移」内）`);
