@@ -157,7 +157,7 @@ const R = 24;        // 精搜半径
 | 抽帧 | `expo-video-thumbnails` | 按时间点抽帧；⚠️ 一次一帧，需多次调用 |
 | 位移+拼接 | **纯 JS，无原生模块** | 已实测 8–15ms/对，手机慢 5 倍也才 ~75ms |
 | OCR | `@react-native-ml-kit/text-recognition` | 安卓 ML Kit，离线免费中文；⚠️ 需 dev build，不能用 Expo Go |
-| 出包 | EAS 云构建 APK | 本机无 Xcode，安卓走 EAS（token 在 mini `~/.expo-token`） |
+| 出包 | EAS 云构建 APK | 本机无 Xcode，安卓走 EAS（凭证不入仓） |
 
 **不需要**：后端、服务器、API key、订阅、账号、云存储、任何联网能力。
 
