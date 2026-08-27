@@ -50,7 +50,7 @@ for (let i = 0; i < all.length; i++) {
 const regions = imgs.map(im => S.cropRows(im.data, w, top, bottom));
 const grays = regions.map(r => S.toGray(r, w, vh));
 const shifts = [];
-for (let i = 0; i < grays.length - 1; i++) shifts.push(S.estimateShift(grays[i], grays[i + 1], w, vh));
+for (let i = 0; i < grays.length - 1; i++) shifts.push(S.estimateShiftCoarse(grays[i], grays[i + 1], w, vh));
 const { keep, dropped, tooFar } = S.pickKeyframes(shifts, vh);
 T.取帧与位移 = Date.now() - t;
 

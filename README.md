@@ -30,8 +30,8 @@ Speaker attribution samples the bubble background color (WeChat green vs. white)
 
 ```
 video → sparse pre-scan → detect scroll region (hysteresis threshold, adaptive)
-      → fixed-interval frames → per-frame displacement (two-stage SAD search)
-      → keyframe selection (rebound frames excluded) → stitch (jump-cut guard)
+      → fixed-interval frames → per-frame displacement (DS=4 coarse SAD search)
+      → keyframe selection (rebound frames excluded) → stitch (two-stage SAD + jump-cut guard)
       → segmented OCR → position-based dedupe → Markdown
 ```
 
@@ -44,7 +44,7 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 ## Status
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
-- **M2 (planned):** displacement computation currently dominates on-device time (~220 s on a mid-range phone; JS SAD on Hermes). Target <30 s via coarse-only per-frame search + downsampling. No native modules unless pure JS provably can't get there.
+- **M2 (in progress, Level 1):** per-frame selection now uses coarse-only SAD while stitch keeps pixel-level rematching. On-device timing and accuracy are awaiting verification; later levels stay separate. No native modules unless pure JS provably can't reach the <30 s displacement target.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development

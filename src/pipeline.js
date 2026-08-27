@@ -10,7 +10,7 @@ const {
   cropRows,
   detectScrollRegion,
   encodeBMP,
-  estimateShift,
+  estimateShiftCoarse,
   pickKeyframes,
   stitch,
   toGray,
@@ -216,7 +216,7 @@ export async function processRecording(asset, app = "wechat", onProgress) {
       assertSameFrameSize(image, width, height);
       const regionRgba = cropRows(image.data, width, region.top, region.bottom);
       const gray = toGray(regionRgba, width, viewHeight);
-      if (previousGray) shifts.push(estimateShift(previousGray, gray, width, viewHeight));
+      if (previousGray) shifts.push(estimateShiftCoarse(previousGray, gray, width, viewHeight));
       previousGray = gray;
       if ((index + 1) % 4 === 0) await pauseForUi();
     }

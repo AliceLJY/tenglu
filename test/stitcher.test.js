@@ -5,6 +5,8 @@ const {
   detectScrollRegion,
   dedupeLines,
   encodeBMP,
+  estimateShift,
+  estimateShiftCoarse,
   pickKeyframes,
   stitch,
 } = require("../src/stitcher");
@@ -16,6 +18,45 @@ function solidRgba(width, height, value) {
     rgba[i + 1] = value;
     rgba[i + 2] = value;
     rgba[i + 3] = 255;
+  }
+  return rgba;
+}
+
+function texturedGray(width, height) {
+  const gray = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const value = 128
+        + 52 * Math.sin(y * 0.113 + x * 0.037)
+        + 39 * Math.sin(y * 0.041 - x * 0.083)
+        + 24 * Math.sin((x + y) * 0.071);
+      gray[y * width + x] = Math.max(0, Math.min(255, Math.round(value)));
+    }
+  }
+  return gray;
+}
+
+function shiftGray(gray, width, height, dy) {
+  const shifted = new Uint8Array(gray.length);
+  for (let y = 0; y < height; y++) {
+    const sourceY = y + dy;
+    if (sourceY < 0 || sourceY >= height) continue;
+    shifted.set(
+      gray.subarray(sourceY * width, (sourceY + 1) * width),
+      y * width,
+    );
+  }
+  return shifted;
+}
+
+function grayToRgba(gray) {
+  const rgba = new Uint8Array(gray.length * 4);
+  for (let i = 0; i < gray.length; i++) {
+    const p = i * 4;
+    rgba[p] = gray[i];
+    rgba[p + 1] = gray[i];
+    rgba[p + 2] = gray[i];
+    rgba[p + 3] = 255;
   }
   return rgba;
 }
@@ -112,6 +153,65 @@ test("detectScrollRegion reports ok:false when static frames contain no seed", (
     seed: [0, height],
     ok: false,
   });
+});
+
+test("coarse shift stays within 4px while full shift remains pixel-accurate", () => {
+  const width = 64;
+  const height = 400;
+  const expected = 13;
+  const oldGray = texturedGray(width, height);
+  const newGray = shiftGray(oldGray, width, height, expected);
+
+  const coarse = estimateShiftCoarse(oldGray, newGray, width, height);
+  const full = estimateShift(oldGray, newGray, width, height);
+
+  assert.ok(Math.abs(coarse.dy - expected) <= 4);
+  assert.equal((coarse.dy + 60) % 4, 0);
+  assert.ok(coarse.conf >= 0 && coarse.conf <= 1);
+  assert.equal(full.dy, expected);
+});
+
+test("coarse shift preserves the sign of a clear rebound", () => {
+  const width = 64;
+  const height = 400;
+  const expected = -5;
+  const oldGray = texturedGray(width, height);
+  const newGray = shiftGray(oldGray, width, height, expected);
+
+  const coarse = estimateShiftCoarse(oldGray, newGray, width, height);
+
+  assert.ok(coarse.dy < 0);
+  assert.ok(Math.abs(coarse.dy - expected) <= 4);
+});
+
+test("coarse shift may quantize a sub-DS rebound to zero", () => {
+  const width = 64;
+  const height = 400;
+  const oldGray = texturedGray(width, height);
+  const newGray = shiftGray(oldGray, width, height, -1);
+
+  const coarse = estimateShiftCoarse(oldGray, newGray, width, height);
+
+  assert.equal(coarse.dy, 0);
+});
+
+test("stitch still rematches keyframes at full pixel precision", () => {
+  const width = 64;
+  const height = 400;
+  const expected = 13;
+  const oldGray = texturedGray(width, height);
+  const newGray = shiftGray(oldGray, width, height, expected);
+
+  const result = stitch(
+    [grayToRgba(oldGray), grayToRgba(newGray)],
+    [0, 1],
+    width,
+    height,
+  );
+
+  assert.deepEqual(result.offsets, [0, expected]);
+  assert.equal(result.height, height + expected);
+  assert.equal(result.warnings.length, 0);
 });
 
 test("stitch handles a low-confidence jump before considering its negative dy", () => {

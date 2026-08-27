@@ -122,13 +122,7 @@ function sad(a, aw, ay, b, bw, by, tw, th, stride = 1) {
   return s;
 }
 
-/**
- * 估计 newG 相对 oldG 向上滚动了多少像素。
- * 两级搜索：降采样 4 倍全范围粗搜 → 全分辨率 ±24px 精搜。
- * 判据用 SAD 而非归一化互相关：同一段视频的帧同源、无亮度差，SAD 更快且精度相同。
- * 返回 dy<0 表示回弹（滑到底的橡皮筋），调用方应丢弃该帧。
- */
-function estimateShift(oldG, newG, w, h) {
+function searchCoarse(oldG, newG, w, h) {
   const A = downsample(oldG, w, h), B = downsample(newG, w, h);
   const dOFF = (OFF / DS) | 0, dBAND = (BAND / DS) | 0;
   let best = Infinity, bestY = 0;
@@ -136,7 +130,31 @@ function estimateShift(oldG, newG, w, h) {
     const s = sad(A.d, A.dw, y, B.d, B.dw, dOFF, A.dw, dBAND);
     if (s < best) { best = s; bestY = y; }
   }
-  const coarse = bestY * DS;
+  return {
+    coarse: bestY * DS,
+    conf: 1 - Math.min(1, best / (A.dw * dBAND * 64)),
+  };
+}
+
+/**
+ * 只做 DS=4 粗搜，精度为 ±4px。
+ * 用于固定 4fps 相邻帧的关键帧选择；不要用于最终拼接定位。
+ * |dy| 小于 4px 的轻微回弹可能量化成 0，因此 dropped 只作近似统计；
+ * 关键帧在 stitch 阶段会重新做两级精搜。
+ */
+function estimateShiftCoarse(oldG, newG, w, h) {
+  const { coarse, conf } = searchCoarse(oldG, newG, w, h);
+  return { dy: coarse - OFF, conf };
+}
+
+/**
+ * 估计 newG 相对 oldG 向上滚动了多少像素。
+ * 两级搜索：降采样 4 倍全范围粗搜 → 全分辨率 ±24px 精搜。
+ * 判据用 SAD 而非归一化互相关：同一段视频的帧同源、无亮度差，SAD 更快且精度相同。
+ * 返回 dy<0 表示回弹（滑到底的橡皮筋），调用方应丢弃该帧。
+ */
+function estimateShift(oldG, newG, w, h) {
+  const { coarse } = searchCoarse(oldG, newG, w, h);
   let fb = Infinity, fy = coarse;
   const lo = Math.max(0, coarse - REFINE), hi = Math.min(h - BAND, coarse + REFINE);
   for (let y = lo; y <= hi; y++) {
@@ -314,7 +332,7 @@ function dedupeLines(lines, opts = {}) {
   return out;
 }
 
-module.exports = { PRESETS, encodeBMP, dedupeLines, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
+module.exports = { PRESETS, encodeBMP, dedupeLines, toGray, detectScrollRegion, estimateShiftCoarse, estimateShift, pickKeyframes, stitch, cropRows };
 
 /**
  * 边抽边验取帧 —— ⚠️ 【已废弃，不要用，也不要在 M2 里复活它】

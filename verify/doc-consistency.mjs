@@ -16,7 +16,7 @@ import { join, relative } from "path";
 const ROOT = new URL("..", import.meta.url).pathname;
 const EXTRA = [process.env.HOME + "/Desktop/个人机遇/面试项目/誊录"];
 
-// term: 出现即需检查的字样；allow: 允许它出现的语境（命中任一即放行）
+// term: 出现即需检查的字样；allow: 允许的行内语境；allowFile: 允许的封存文件
 const RULES = [
   { term: "walkKeyframes", allow: /已废弃|不要用|不要复活|不要接回|任何批次|试探法后被|中途试过|历史|反例|module\.exports|^async function|^\s*\*/ },
   { term: "M2 可选", allow: null },
@@ -24,6 +24,9 @@ const RULES = [
   { term: "getThumbnailAsync 可指定宽度", allow: null },
   { term: "唯一的大头", allow: /Mac 上/ },
   { term: "抽帧是最大的未知数", allow: /~~|已被真机实测推翻/ },
+  { term: "逐帧位移（两级 SAD", allow: null },
+  { term: "per-frame displacement (two-stage SAD", allow: null },
+  { term: "逐帧 `estimateShift`", allow: null, allowFile: /交接-M1\.md$/ },
 ];
 
 const SKIP = /node_modules|\.git|package-lock|\/out\/|doc-consistency/;   // 跳过自身：规则定义行必然含这些字样
@@ -40,11 +43,13 @@ function walk(dir, acc = []) {
 let bad = 0;
 for (const file of [...walk(ROOT), ...EXTRA.flatMap(d => { try { return walk(d); } catch { return []; } })]) {
   const lines = readFileSync(file, "utf8").split("\n");
+  const fileLabel = relative(ROOT, file);
   lines.forEach((line, i) => {
-    for (const { term, allow } of RULES) {
+    for (const { term, allow, allowFile } of RULES) {
       if (!line.includes(term)) continue;
+      if (allowFile && allowFile.test(fileLabel)) continue;
       if (allow && allow.test(line)) continue;
-      console.log(`✗ ${relative(ROOT, file)}:${i + 1}  「${term}」出现在未许可语境`);
+      console.log(`✗ ${fileLabel}:${i + 1}  「${term}」出现在未许可语境`);
       console.log(`    ${line.trim().slice(0, 100)}`);
       bad++;
     }
