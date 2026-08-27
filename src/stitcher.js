@@ -20,34 +20,86 @@ function toGray(rgba, w, h) {
 }
 
 /**
- * 分离固定 UI 与滚动区：逐行算跨帧标准差。
- * <3 固定（导航栏/输入栏），>=12 滚动内容。取中间最大的连续滚动段。
+ * 分离固定 UI 与滚动区：逐行跨帧标准差 + 滞后阈值（hysteresis）。
  *
- * 只用后 60% 的帧取样 —— 顶部导航栏在有些 app 里是滚动后才浮现的，
+ * ⚠️ 这里试过两个更简单的做法，两个各错一半，别改回去：
+ *
+ *   A. 取"最大连续超阈值段" —— 上边界对，**下边界会被截断**。
+ *      内容区中部的 row_std 会局部走低（大段留白、纯色图片、行距），
+ *      最大连续段在那里断开。实测小红书把 y183~1508 判成 y1081~1195，只剩 114px。
+ *   B. 从两端向内收缩 —— 下边界对，**上边界会吃进状态栏**。
+ *      时钟/电量/录屏计时胶囊也在逐帧变化，从上往下扫第一行就超阈值。
+ *      实测两段素材都判成 y6~，把状态栏当成了内容。
+ *
+ * 正解是滞后阈值：**高阈值找种子，低阈值向外扩**。
+ *   - 中部局部走低（小红书实测降到 15，两侧 22）高于低阈值，扩展时能跨过去 → 修好 A
+ *   - 状态栏与内容区之间隔着导航栏（std 接近 0，远低于低阈值），扩展到那里会停 → 修好 B
+ *
+ * 阈值全部自适应（取本段自己的 85 分位），不写死数字——
+ * 固定 12.0 在滚动慢或对比度低的素材上会把内容区判成固定 UI。
+ *
+ * 取样只用后 60% 的帧：顶部导航栏在有些 app 里是滚动后才浮现的，
  * 用整段视频会把它误判成滚动区（小红书实测）。
+ *
+ * ⚠️ **预扫至少给 24 帧。** 微信素材 12 帧就够，但小红书在 12/16 帧时种子会落进状态栏
+ * （帧太少时内容区的变化还没体现出来，而时钟和录屏计时胶囊每帧都在变），
+ * 返回 y6~68 = 屏高的 3.8%。24 帧起两段素材都稳定正确。
+ *
+ * （坑 A 由 Minis 在 iSH 侧先撞到，本实现独立复现后连坑 B 一起解决。）
  */
-function detectScrollRegion(grays, w, h) {
+function detectScrollRegion(grays, w, h, opts = {}) {
   const use = grays.slice(Math.floor(grays.length * 0.4));
   const n = use.length;
-  const moving = new Uint8Array(h);
+  const std = new Float64Array(h);
   for (let y = 0; y < h; y++) {
-    let acc = 0;
-    for (let x = 0; x < w; x += 4) {            // 横向每 4 列采一个，够用且快 4 倍
+    let acc = 0, cols = 0;
+    for (let x = 0; x < w; x += 4) {
       let s = 0, s2 = 0;
       for (let k = 0; k < n; k++) {
         const v = use[k][y * w + x];
         s += v; s2 += v * v;
       }
       acc += Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2));
+      cols++;
     }
-    moving[y] = acc / (w / 4) >= 12 ? 1 : 0;
+    std[y] = acc / cols;
   }
-  let best = [0, 0], cur = -1;
+  const sorted = Array.from(std).sort((a, b) => a - b);
+  const p85 = sorted[Math.floor(sorted.length * 0.85)];
+  const hi = Math.max(10, p85 * (opts.hiRatio ?? 0.70));   // 种子阈值
+  const lo = Math.max(4, p85 * (opts.loRatio ?? 0.28));    // 扩展阈值
+
+  // 1) 用高阈值找最长的连续段作为种子
+  let bs = 0, be = 0, cs = -1;
   for (let y = 0; y <= h; y++) {
-    if (y < h && moving[y]) { if (cur < 0) cur = y; }
-    else if (cur >= 0) { if (y - cur > best[1] - best[0]) best = [cur, y]; cur = -1; }
+    if (y < h && std[y] >= hi) { if (cs < 0) cs = y; }
+    else if (cs >= 0) { if (y - cs > be - bs) { bs = cs; be = y; } cs = -1; }
   }
-  return { top: best[0], bottom: best[1] };
+  if (be === bs) return { top: 0, bottom: h, threshold: hi, seed: [0, h] };
+
+  // 2) 用低阈值从种子向两端扩展，允许跨过短缺口
+  const GAP = opts.gap ?? 40;
+  let top = bs;
+  for (let y = bs - 1; y >= 0; y--) {
+    if (std[y] >= lo) { top = y; continue; }
+    let j = y, run = 0;
+    while (j >= 0 && std[j] < lo && run < GAP) { j--; run++; }
+    if (run >= GAP || j < 0) break;      // 缺口太长 = 真的到边界了（导航栏）
+    top = j; y = j;
+  }
+  let bottom = be;
+  for (let y = be; y < h; y++) {
+    if (std[y] >= lo) { bottom = y + 1; continue; }
+    let j = y, run = 0;
+    while (j < h && std[j] < lo && run < GAP) { j++; run++; }
+    if (run >= GAP || j >= h) break;
+    bottom = j + 1; y = j;
+  }
+  // 自检：内容区不可能只占屏幕的一小条。低于 30% 基本是种子落错了地方
+  // （实测小红书预扫只给 12/16 帧时，种子落进状态栏，返回 y6~68 = 屏高的 3.8%）。
+  // 这是这个函数唯一能自己发现失败的信号，调用方必须处理，不要静默接受。
+  const ok = (bottom - top) >= h * 0.3;
+  return { top, bottom, threshold: hi, seed: [bs, be], ok };
 }
 
 const DS = 4, OFF = 60, BAND = 300, REFINE = 24;
@@ -179,7 +231,21 @@ function encodeBMP(rgba, w, h) {
   return out;
 }
 
-module.exports = { encodeBMP, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
+/**
+ * 各 app 的预设。预扫帧数不做通用值 —— app 类型是用户一秒能回答的事，
+ * 问一句比让算法去猜可靠得多，也省掉一半抽帧成本。
+ *
+ * preScan 的下限由"种子会不会落进状态栏"决定：帧太少时内容区的跨帧变化
+ * 还没体现出来，而时钟/电量/录屏计时胶囊每帧都在变，种子就会落到顶部那一条。
+ * 实测微信 12 帧已稳定正确，小红书要 24 帧（12/16 帧时返回 y6~68 = 屏高 3.8%）。
+ */
+const PRESETS = {
+  wechat:      { preScan: 12, mode: "wechat" },   // 微信聊天：滚动慢、气泡有色差
+  xiaohongshu: { preScan: 24, mode: "plain"  },   // 小红书评论：滚动快、通篇左对齐
+  generic:     { preScan: 24, mode: "plain"  },   // 不确定就用它，多花约 12 次抽帧
+};
+
+module.exports = { PRESETS, encodeBMP, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
 
 /**
  * 边抽边验：app 里的正式取帧策略。
@@ -197,51 +263,63 @@ module.exports = { encodeBMP, toGray, detectScrollRegion, estimateShift, pickKey
  */
 async function walkKeyframes(grabFrame, durationMs, w, viewH, opts = {}) {
   const lo = (opts.minAdvance ?? 0.45) * viewH;
-  // 上限 0.65 是实测定的，不要往上调。同一实现在不同位移下的准确性：
-  //   ≤70% 视口 → 零误差；75% → 误差 -18px；≥80% → 完全翻车（误差 -714px，匹配到错误局部极值）
-  // conf 在翻车时会掉到 0.69-0.78，所以下面的 conf<0.85 判据能兜住，
-  // 但把目标区间压在安全区内比依赖兜底更稳。
+  const target = (opts.targetAdvance ?? 0.58) * viewH;
   const hi = (opts.maxAdvance ?? 0.65) * viewH;
-  const MIN_STEP = opts.minStepMs ?? 100;
+  const MIN_STEP = opts.minStepMs ?? 80;
   const maxProbes = opts.maxProbes ?? 60;
 
   const first = await grabFrame(0);
   const frames = [first], times = [0];
   let prevGray = toGray(first, w, viewH);
-  let t = 0, step = Math.max(300, Math.min(3000, durationMs / 12));
-  let probes = 1;
+  let t = 0, probes = 1;
   const warnings = [];
 
+  // 起步先用小步测滚动速度，不要拿"时长/12"猜。
+  // 猜出来的步长在滚得快的素材上会一路超上限、反复回退空转：
+  // 实测小红书（10412px/32s，比微信快 3 倍）用猜的起步会耗尽 60 次探测才走到 7.4s。
+  // Minis 在 iSH 侧撞到同一问题（空转 135 次 / 100 秒），解法一致。
+  let step = opts.probeStepMs ?? 500;
+  let pxPerMs = 0;
+
   while (t < durationMs - 60 && probes < maxProbes) {
-    const atEnd = t + step >= durationMs - 1;
-    const nt = Math.min(durationMs - 1, t + step);
+    const nt = Math.min(durationMs - 1, t + Math.max(MIN_STEP, Math.round(step)));
     const f = await grabFrame(nt);
     probes++;
     const g = toGray(f, w, viewH);
     const { dy, conf } = estimateShift(prevGray, g, w, viewH);
+    const dt = nt - t;
 
-    // 迈太大 —— 不论是不是最后一帧都要收步重试，这是丢内容的唯一入口
+    // 测到速度就用速度直接反推步长，避免靠试错收敛
+    if (dy > 0 && conf >= 0.85 && dt > 0) pxPerMs = dy / dt;
+
     if (dy > hi || conf < 0.85) {
       if (step > MIN_STEP) {
-        const shrink = dy > hi ? Math.max(0.35, (hi / dy) * 0.9) : 0.5;
-        step = Math.max(MIN_STEP, Math.floor(step * shrink));
+        step = pxPerMs > 0
+          ? Math.max(MIN_STEP, (target / pxPerMs) * 0.95)      // 有速度：一步到位
+          : Math.max(MIN_STEP, step * (dy > hi ? Math.max(0.3, (hi / dy) * 0.85) : 0.5));
         continue;
       }
-      // 已经收到最小步长仍然过大 = 用户在这一段滑得太快，视频里本就没拍到
       warnings.push(`t=${(nt / 1000).toFixed(1)}s 处滑动过快（单步 ${dy}px / 屏高 ${viewH}px，置信度 ${conf.toFixed(2)}），该段内容可能已丢失`);
     } else if (dy < 0) {
-      step = Math.floor(step * 1.6);            // 回弹，跳过
+      step = step * 1.6;
       continue;
-    } else if (dy < lo && !atEnd) {
-      step = Math.floor(step * (dy > 4 ? Math.min(3, hi / Math.max(dy, 1)) : 2.5));
-      continue;                                  // 前进太少，迈大一点重试
+    } else if (dy < lo && nt < durationMs - 1) {
+      // 试过把这里放宽成"只要 dy>2 就收下"，想着多几个关键帧无所谓、能少几次探测。
+      // 结果反而更糟：微信从 13 次探测涨到 60 次耗尽、只覆盖到 9.0s。
+      // 原因是收下小位移会把 pxPerMs 估偏，后面每一步的反推都跟着错。
+      // **别再往这个方向改了**，这是第三次在同一个地方翻车。
+      step = pxPerMs > 0
+        ? Math.min(durationMs, (target / pxPerMs) * 1.05)
+        : step * 2.5;
+      continue;
     }
 
     frames.push(f); times.push(nt); prevGray = g; t = nt;
     if (nt >= durationMs - 1) break;
-    step = Math.max(MIN_STEP, Math.floor(step * 1.15));   // 收下后略微加速，适应越滑越快
+    // 按刚测到的真实速度定下一步，跟得上加速/减速
+    step = pxPerMs > 0 ? Math.max(MIN_STEP, target / pxPerMs) : step * 1.15;
   }
-  if (probes >= maxProbes) warnings.push(`取帧探测达到上限 ${maxProbes} 次，可能未覆盖完整视频`);
+  if (probes >= maxProbes) warnings.push(`取帧探测达到上限 ${maxProbes} 次，只覆盖到 ${(t / 1000).toFixed(1)}s / ${(durationMs / 1000).toFixed(1)}s`);
   return { frames, times, probes, warnings };
 }
 

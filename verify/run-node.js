@@ -11,7 +11,9 @@ const S = require("../src/stitcher");
 const j = require("jpeg-js"), fs = require("fs"), path = require("path");
 
 const dir = process.argv[2], FPS = Number(process.argv[3] || 4);
-if (!dir) { console.error("用法: node run-node.js <帧目录> [fps]"); process.exit(1); }
+const app = process.argv[4] || "generic";
+const preset = S.PRESETS[app] || S.PRESETS.generic;
+if (!dir) { console.error("用法: node run-node.js <帧目录> [fps] [wechat|xiaohongshu|generic]"); process.exit(1); }
 const all = fs.readdirSync(dir).filter(f => f.endsWith(".jpg")).sort();
 const DUR = (all.length / FPS) * 1000;
 const dec = i => j.decode(fs.readFileSync(path.join(dir, all[i])), { useTArray: true });
@@ -19,11 +21,14 @@ const dec = i => j.decode(fs.readFileSync(path.join(dir, all[i])), { useTArray: 
 const T = {};
 const tAll = Date.now();
 
-// ---- 阶段一：预扫（16 次取帧 + 解码 + 灰度 + 滚动区检测）----
+// ---- 阶段一：预扫（24 次取帧 + 解码 + 灰度 + 滚动区检测）----
 let t = Date.now();
-const pre = Array.from({ length: 16 }, (_, i) => Math.round((i * (all.length - 1)) / 15)).map(dec);
+const N = preset.preScan;
+const pre = Array.from({ length: N }, (_, i) => Math.round((i * (all.length - 1)) / (N - 1))).map(dec);
 const w = pre[0].width, h = pre[0].height;
-const { top, bottom } = S.detectScrollRegion(pre.map(im => S.toGray(im.data, w, h)), w, h);
+const reg = S.detectScrollRegion(pre.map(im => S.toGray(im.data, w, h)), w, h);
+if (!reg.ok) { console.error(`✗ 滚动区检测失败：y${reg.top}~${reg.bottom} 只占屏高 ${((reg.bottom-reg.top)/h*100).toFixed(1)}%，加大预扫帧数或换素材`); process.exit(1); }
+const { top, bottom } = reg;
 const vh = bottom - top;
 T.预扫 = Date.now() - t;
 
@@ -58,7 +63,7 @@ const grab = async ms => {
 
   T.总耗时 = Date.now() - tAll;
 
-  console.log(`滚动区 y${top}~${bottom} (高 ${vh})`);
+  console.log(`[${app}] 预扫 ${N} 帧 → 滚动区 y${top}~${bottom} (高 ${vh})`);
   console.log(`探测 ${probes} 次 → 关键帧 ${frames.length} 张 @ ${times.map(x => (x / 1000).toFixed(1) + "s").join(" ")}`);
   console.log(`长图 ${out.width}x${out.height} → long_node.bmp (${(bmp.length / 1048576).toFixed(1)} MB)`);
   console.log(`耗时 ms: ${JSON.stringify(T)}`);
