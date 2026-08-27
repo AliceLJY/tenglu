@@ -152,25 +152,37 @@ function estimateShift(oldG, newG, w, h) {
  * 就回退选它的前一帧，而不是"选第一个超过 60% 的帧"。
  */
 function pickKeyframes(shifts, viewH, overlap = 0.6) {
+  // 回弹帧（相对前一帧位移为负的帧）从候选里真实排除。
+  // 早期版本只数了个 dropped 计数、什么都没排除——微信素材上结果碰巧正确
+  // （回弹帧的 cum 与前帧相同、不触发选帧），但那是巧合不是保证：
+  // cand = k-1 恰落在回弹帧上、或末尾强制帧是回弹帧时，一张"正在回弹中"的
+  // 过渡画面就会进 keep。Codex 冷读时指出计数与行为不符。
+  const rebound = new Set();
   const cum = [0];
-  let acc = 0, dropped = 0;
-  for (const s of shifts) {
-    if (s.dy < 0) dropped++;
+  let acc = 0;
+  shifts.forEach((s, i) => {
+    if (s.dy < 0) rebound.add(i + 1);          // 帧 i+1 相对帧 i 在回弹
     acc += Math.max(0, s.dy);
     cum.push(acc);
-  }
+  });
+  const prevSolid = k => { while (k > 0 && rebound.has(k)) k--; return k; };
+
   const keep = [0];
   let last = 0, tooFar = 0;
   for (let k = 1; k < cum.length; k++) {
     if (cum[k] - cum[last] > viewH * overlap) {
-      const cand = k - 1 > last ? k - 1 : k;
+      let cand = k - 1 > last ? k - 1 : k;
+      cand = prevSolid(cand);                   // 候选是回弹帧 → 往前找实帧
+      if (cand <= last) cand = rebound.has(k) ? prevSolid(k) : k;
+      if (cand <= last) continue;               // 附近全是回弹，等下一个
       if (cum[cand] - cum[last] >= viewH) tooFar++;
       keep.push(cand);
       last = cand;
     }
   }
-  if (keep[keep.length - 1] !== cum.length - 1) keep.push(cum.length - 1);
-  return { keep, dropped, tooFar };
+  const tail = prevSolid(cum.length - 1);       // 末尾也取最后一个非回弹帧
+  if (tail > keep[keep.length - 1]) keep.push(tail);
+  return { keep, dropped: rebound.size, tooFar };
 }
 
 /**
@@ -178,16 +190,26 @@ function pickKeyframes(shifts, viewH, overlap = 0.6) {
  * 累积每帧半个像素，跨 20 帧就漂 3-4px。
  */
 function stitch(frames, keep, w, viewH) {
+  // 关键帧之间做一次性匹配定位。位移 <= 0 的帧【跳过不贴】——
+  // 它相对上一个已贴帧没有带来新内容（用户往回滚了）。
+  // 早期版本把负位移夹成 0 仍然贴上去，两帧落在同一位置、后帧覆盖前帧，
+  // 正是规格禁止的同位置覆盖（"真真假假"重影事故就是这个形状）。
+  // 跳过的帧继续以上一个已贴帧为参照去匹配下一帧，链不断。
   const grays = keep.map(k => toGray(frames[k], w, viewH));
+  const placedIdx = [0];                        // keep 内下标
   const off = [0];
+  let skipped = 0;
   for (let i = 1; i < grays.length; i++) {
-    const { dy } = estimateShift(grays[i - 1], grays[i], w, viewH);
-    off.push(off[i - 1] + Math.max(0, dy));
+    const ref = placedIdx[placedIdx.length - 1];
+    const { dy } = estimateShift(grays[ref], grays[i], w, viewH);
+    if (dy <= 0) { skipped++; continue; }
+    placedIdx.push(i);
+    off.push(off[off.length - 1] + dy);
   }
   const H = off[off.length - 1] + viewH;
   const canvas = new Uint8Array(w * H * 4);
-  keep.forEach((k, i) => canvas.set(frames[k], off[i] * w * 4));
-  return { canvas, width: w, height: H, offsets: off };
+  placedIdx.forEach((pi, j) => canvas.set(frames[keep[pi]], off[j] * w * 4));
+  return { canvas, width: w, height: H, offsets: off, skipped };
 }
 
 /** 从整帧 RGBA 里裁出滚动区 */
@@ -255,7 +277,8 @@ const PRESETS = {
  *   - 短行不动（"哈哈哈""真的""是的"在真实对话里本来就会重复出现）
  *   - 窗口限定在最近 WINDOW 行内（重影总是近距离的；隔了几百行的相同长句更可能是真内容）
  *
- * 实测小红书那段：191 行 → 去掉 12 组重影 → 179 行，与逐帧全量基线 183 行同一量级。
+ * 这是第二道防线：第一道在拼接层（stitch 跳过负位移帧，回弹修复后小红书 OCR
+ * 重复组从 12 降到 2）。本函数兜住剩下的——实测微信一行没删、准确率不变。
  */
 function dedupeLines(lines, opts = {}) {
   const MINLEN = opts.minLen ?? 8;
@@ -275,7 +298,7 @@ function dedupeLines(lines, opts = {}) {
 module.exports = { PRESETS, encodeBMP, dedupeLines, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
 
 /**
- * 边抽边验：app 里的正式取帧策略。
+ * 边抽边验取帧 —— ⚠️ M2 可选优化，M1 不要用（主路径是固定 fps 全取）。\n *\n * 它在\u201c前段静止后段猛滑\u201d的素材上找不到落点（小红书实测 60 次探测只收 1 帧），\n * 三次修复尝试全部失败，记录见 PLAN.md「取帧策略」节。
  *
  * 不要"均匀抽 N 帧再算位移"——稀疏帧之间可能跨过回弹或快速滑动段，
  * 匹配会静默错位并高估总位移（实测均匀抽 12 帧把 3739 高估成 4224，长图多出 485px 重影）。

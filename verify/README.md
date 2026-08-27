@@ -26,15 +26,17 @@
 cd verify && npm install
 # 先用 ffmpeg 把测试录屏抽成帧目录
 ffmpeg -v error -i <录屏.mp4> -vf fps=4 -q:v 2 /tmp/frames/f_%04d.jpg
-node run-node.js /tmp/frames 4
+node run-node.js /tmp/frames 4 wechat
 ```
 
 期望输出：
 
 ```
 滚动区 y154~1522 (高 1368)
-探测 11 次 → 关键帧 7 张 @ 0.0s 5.9s 11.7s 15.0s 18.8s 23.2s 27.0s
-长图 720x5107 → long_node.bmp (10.5 MB)
+[wechat] 预扫 12 帧 → 滚动区 y154~1522 (高 1368)
+108 帧 → 关键帧 6 张，丢弃回弹帧 4
+长图 720x5107 → out/long_node.bmp (10.5 MB)
+耗时 ms: {"预扫":~380,"取帧与位移":~4400,"拼接":~85,"BMP编码":~30,"总耗时":~4800}
 耗时 ms: {"预扫":~470,"试探取帧":~430,"拼接":~95,"BMP编码":~23,"总耗时":~1000}
 ```
 
