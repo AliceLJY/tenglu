@@ -7,6 +7,7 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "test": "node --test",
+    "doc:check": "node verify/doc-consistency.mjs",
     "lint": "eslint App.js src test"
   },
   "dependencies": {
