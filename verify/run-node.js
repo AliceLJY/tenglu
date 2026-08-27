@@ -5,7 +5,7 @@
  *   node verify/run-node.js <帧目录> <抽帧fps>
  *
  * 计时口径与 M1 任务书第八节一致，六个阶段互不重叠：
- *   预扫 / 试探取帧 / 拼接 / BMP编码 / (OCR 在 app 侧) / 总耗时
+ *   预扫 / 取帧与位移 / 拼接 / BMP编码 / (OCR 在 app 侧) / 总耗时
  */
 const S = require("../src/stitcher");
 const j = require("jpeg-js"), fs = require("fs"), path = require("path");
