@@ -141,7 +141,43 @@ function cropRows(rgba, w, top, bottom) {
   return rgba.subarray(top * w * 4, bottom * w * 4);
 }
 
-module.exports = { toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
+/**
+ * RGBA → 24 位 BMP。给 RN 用：中间盘绝对不能用 JPEG。
+ *
+ * 实测同一张长图送同一个 OCR：PNG 71 块 661 字符、BMP 71 块 661 字符（完全一致），
+ * 而 JPEG q92 只有 69 块 655 字符 —— 有损压缩会吃掉文字边缘，OCR 少认两块。
+ * Minis 在 iSH 侧独立测到同样现象（JPEG 比 BMP 少认一块）。
+ *
+ * 选 BMP 而不是 PNG 的理由是编码成本：BMP 就是拼个 54 字节头再倒着写像素，
+ * PNG 要走 zlib，在模拟层/低端机上慢几十倍（Minis 实测 PNG 2431ms vs BMP 46ms）。
+ */
+function encodeBMP(rgba, w, h) {
+  const rowSize = Math.floor((24 * w + 31) / 32) * 4;   // 每行 4 字节对齐
+  const pixSize = rowSize * h;
+  const out = new Uint8Array(54 + pixSize);
+  const dv = new DataView(out.buffer);
+  out[0] = 0x42; out[1] = 0x4d;                          // "BM"
+  dv.setUint32(2, 54 + pixSize, true);
+  dv.setUint32(10, 54, true);
+  dv.setUint32(14, 40, true);                            // DIB 头长度
+  dv.setInt32(18, w, true);
+  dv.setInt32(22, h, true);                              // 正数 = 行序自下而上
+  dv.setUint16(26, 1, true);
+  dv.setUint16(28, 24, true);                            // 24 bpp
+  dv.setUint32(34, pixSize, true);
+  for (let y = 0; y < h; y++) {
+    let dst = 54 + (h - 1 - y) * rowSize;                // BMP 最后一行在最前
+    let src = y * w * 4;
+    for (let x = 0; x < w; x++, src += 4) {
+      out[dst++] = rgba[src + 2];                        // B
+      out[dst++] = rgba[src + 1];                        // G
+      out[dst++] = rgba[src];                            // R
+    }
+  }
+  return out;
+}
+
+module.exports = { encodeBMP, toGray, detectScrollRegion, estimateShift, pickKeyframes, stitch, cropRows };
 
 /**
  * 边抽边验：app 里的正式取帧策略。
@@ -159,7 +195,11 @@ module.exports = { toGray, detectScrollRegion, estimateShift, pickKeyframes, sti
  */
 async function walkKeyframes(grabFrame, durationMs, w, viewH, opts = {}) {
   const lo = (opts.minAdvance ?? 0.45) * viewH;
-  const hi = (opts.maxAdvance ?? 0.75) * viewH;
+  // 上限 0.65 是实测定的，不要往上调。同一实现在不同位移下的准确性：
+  //   ≤70% 视口 → 零误差；75% → 误差 -18px；≥80% → 完全翻车（误差 -714px，匹配到错误局部极值）
+  // conf 在翻车时会掉到 0.69-0.78，所以下面的 conf<0.85 判据能兜住，
+  // 但把目标区间压在安全区内比依赖兜底更稳。
+  const hi = (opts.maxAdvance ?? 0.65) * viewH;
   const MIN_STEP = opts.minStepMs ?? 100;
   const maxProbes = opts.maxProbes ?? 60;
 
