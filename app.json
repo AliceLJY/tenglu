@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "誊录",
+    "slug": "tenglu",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "com.aliceljy.tenglu",
+      "blockedPermissions": [
+        "android.permission.INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许誊录读取你选择的滚动录屏，全程只在本机处理。",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f671c011-29f7-4b9c-9c73-fcb7d5ee28b0"
+      }
+    },
+    "owner": "aliceljy"
+  }
+}

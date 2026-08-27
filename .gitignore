@@ -1,6 +1,10 @@
 node_modules/
 .expo/
+.eas/
 dist/
+coverage/
+android/
+ios/
 *.log
 .DS_Store
 

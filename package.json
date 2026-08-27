@@ -1,0 +1,27 @@
+{
+  "name": "tenglu",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "test": "node --test",
+    "lint": "eslint App.js src test"
+  },
+  "dependencies": {
+    "@react-native-ml-kit/text-recognition": "2.0.0",
+    "expo": "~57.0.16",
+    "expo-clipboard": "~57.0.1",
+    "expo-file-system": "~57.0.5",
+    "expo-image-picker": "~57.0.13",
+    "expo-video-thumbnails": "~57.0.1",
+    "jpeg-js": "0.4.4",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "eslint-config-expo": "~57.0.2"
+  }
+}
