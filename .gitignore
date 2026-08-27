@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+*.log
+.DS_Store
+
+# ---- 本地私有测试数据：真实微信聊天记录，绝不入库 ----
+# 这些是验收基准，codex 和后续验证需要它们，但内容是 Alice 的私人对话。
+# 本地保留、永不提交。换机时手工拷贝，不要想办法让 git 带上它们。
+verify/groundtruth.json
+verify/expected_output.md
+verify/expected_long.jpg
+verify/long_node.jpg
+verify/*.mp4
+verify/frames/
