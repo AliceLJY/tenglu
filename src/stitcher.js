@@ -76,7 +76,8 @@ function detectScrollRegion(grays, w, h, opts = {}) {
     if (y < h && std[y] >= hi) { if (cs < 0) cs = y; }
     else if (cs >= 0) { if (y - cs > be - bs) { bs = cs; be = y; } cs = -1; }
   }
-  if (be === bs) return { top: 0, bottom: h, threshold: hi, seed: [0, h] };
+  // 无种子 = 没有任何行超过 hi = 画面几乎没滚动，这是检测失败不是"全屏都是内容"
+  if (be === bs) return { top: 0, bottom: h, threshold: hi, seed: [0, h], ok: false };
 
   // 2) 用低阈值从种子向两端扩展，允许跨过短缺口
   const GAP = opts.gap ?? 40;
