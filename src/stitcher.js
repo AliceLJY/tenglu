@@ -5,7 +5,9 @@
  * 输出：拼好的长图（RGBA 像素数组）
  *
  * 所有函数都不碰文件系统、不依赖 Node API，只接受和返回像素数组。
- * 宿主负责：Node 用 jpeg-js 读写文件；RN 用 expo-video-thumbnails 抽帧 + jpeg-js 解码。
+ * 宿主负责取帧与落盘：
+ *   Node — jpeg-js 读帧；RN — expo-video-thumbnails 抽帧 + jpeg-js **只用 decode**。
+ * 长图落盘一律走本文件的 encodeBMP()，**不要用 jpeg-js 编码** —— JPEG 有损，OCR 会少认块。
  */
 
 /** RGBA → 灰度（整数近似，避免浮点） */
