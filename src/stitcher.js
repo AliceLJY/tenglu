@@ -199,9 +199,21 @@ function stitch(frames, keep, w, viewH) {
   const placedIdx = [0];                        // keep 内下标
   const off = [0];
   let skipped = 0;
+  const warnings = [];
   for (let i = 1; i < grays.length; i++) {
     const ref = placedIdx[placedIdx.length - 1];
-    const { dy } = estimateShift(grays[ref], grays[i], w, viewH);
+    const { dy, conf } = estimateShift(grays[ref], grays[i], w, viewH);
+    if (conf < 0.5) {
+      // 页面跳转（内容整体切换，不是滚动）：两侧帧之间不存在真实位移，
+      // 匹配结果是垃圾值——直接采用会贴出错位内容，跳过不贴又会让 anchor
+      // 卡死在跳转前、后面全丢（Minis 在 iSH 侧实测：卡死让长图 13861 只剩 7657）。
+      // 按它验证过的方案：保守推进 0.95×视口（宁可多不可少，重叠交给去重），
+      // 把跳转后的帧当新 anchor 贴上，链继续。
+      warnings.push(`关键帧 ${i} 与前帧匹配置信度仅 ${conf.toFixed(2)}（疑似页面跳转），按 0.95 屏保守推进`);
+      placedIdx.push(i);
+      off.push(off[off.length - 1] + Math.round(viewH * 0.95));
+      continue;
+    }
     if (dy <= 0) { skipped++; continue; }
     placedIdx.push(i);
     off.push(off[off.length - 1] + dy);
@@ -209,7 +221,7 @@ function stitch(frames, keep, w, viewH) {
   const H = off[off.length - 1] + viewH;
   const canvas = new Uint8Array(w * H * 4);
   placedIdx.forEach((pi, j) => canvas.set(frames[keep[pi]], off[j] * w * 4));
-  return { canvas, width: w, height: H, offsets: off, skipped };
+  return { canvas, width: w, height: H, offsets: off, skipped, warnings };
 }
 
 /** 从整帧 RGBA 里裁出滚动区 */
