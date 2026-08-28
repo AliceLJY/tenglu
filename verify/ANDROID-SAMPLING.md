@@ -4,7 +4,7 @@
 
 文本锚点仍只使用 OCR 文本及其 `x/y/w/h` 计算滚动位移。只有微信满宽气泡同时贴住左右对齐峰、纯坐标无法判断发言人时，才读取原始帧中一个 OCR 文本框的小区域，借气泡底色判断方向。
 
-这份设计现已实现为 App 内可切换的 M3 独立路径；现有拼接处理器仍完整保留且默认选中。
+这份设计现已实现为 App 内的 Android 默认路径；现有拼接处理器仍完整保留，可从处理路径开关切换，也可在文本锚点告警时一键重新处理。
 Mac 验证器使用 `djpeg -crop`；Android 对应实现位于
 `modules/tenglu-region-sampler`，使用
 [`BitmapRegionDecoder`](https://developer.android.com/reference/android/graphics/BitmapRegionDecoder)，
@@ -27,7 +27,7 @@ OCR 必需的抽帧步骤；JavaScript 仍不读取整帧 RGBA，气泡颜色仍
 3. 亮像素不少于 20 个时，只使用亮像素；否则使用框内全部像素。三个通道分别取中位数；样本数为偶数时，取中间两个值的算术平均，保留可能出现的 `.5`。
 4. `G - B > 40` 判为“我”；否则 R、G、B 都严格大于 245 时判为“对方”；其余结果为“未定”。
 
-“未定”必须作为显式失败返回，不能继续用相邻消息或回复关系猜测。本批 Mac 数据的 13 个歧义气泡全部得到确定结果：7 个“我”、6 个“对方”。
+“未定”必须作为显式失败返回，不能继续用相邻消息或回复关系猜测。本批 Mac 数据的 13 个歧义气泡全部得到确定结果：7 个“我”、6 个“对方”。深色模式尚未在真机验证，本版不据此调整颜色阈值；构造的深色 RGB 单元测试只验证“判不出就明说”的行为保护，不代表支持或不支持深色模式。
 
 ## Android 调用方式
 
@@ -129,7 +129,7 @@ OPPO 真机已经测到这条路径：13 块共 **60 ms**，解码 **172,339 px*
 ## 失败与降级
 
 - 没有原始帧：保留纯坐标路径，能力基线约为 35/41，不把它报告成像素验证结果。
-- 提供了帧但文件缺失、区域无效、解码失败或颜色未定：返回显式告警；不能静默改用已删除的“中点二分传播”或“孤立回复先验”。
+- 提供了帧但文件缺失、区域无效、解码失败或颜色未定：该气泡不输出，结果状态为告警；用户界面说明“部分内容可能缺失”，并提供用拼接路径重新处理的入口。不能静默猜成某一侧，也不能改用已删除的“中点二分传播”或“孤立回复先验”。
 - 局部像素只解决发言人歧义，不参与文本锚点位移、跨帧去重或内容生成。
 
 Android API 依据：[`BitmapRegionDecoder`](https://developer.android.com/reference/android/graphics/BitmapRegionDecoder)、[`BitmapFactory.Options`](https://developer.android.com/reference/android/graphics/BitmapFactory.Options)、[`Bitmap.Config`](https://developer.android.com/reference/android/graphics/Bitmap.Config)。

@@ -1,8 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { classifyBubbleColor } = require("../src/postprocess");
 
 const {
   analyzeAnchorFrames,
+  attachWechatNicknameFields,
   checkAnchors,
   clusterVote,
   collectFrameLines,
@@ -394,6 +396,188 @@ test("pixel result resolves a double peak without coordinate priors", () => {
   assert.equal(rendered.speakerStats.decodedPixels, 18040);
 });
 
+test("group-chat top-row geometry keeps nickname and body as lossless fields", () => {
+  const original = {
+    rows: [
+      line("示例群昵称", 118, 344, 162, 20, 0, 344),
+      line("这里是正文", 135, 390, 232, 36, 0, 390),
+    ],
+    text: "示例群昵称这里是正文",
+  };
+  const result = attachWechatNicknameFields([original], {
+    left: 136,
+    right: 585,
+  });
+
+  assert.equal(result.candidateCount, 1);
+  assert.deepEqual(result.groups[0].nickname, {
+    text: "示例群昵称",
+    bodyText: "这里是正文",
+    kind: "separate-top-line",
+  });
+  assert.equal(
+    result.groups[0].nickname.text + result.groups[0].nickname.bodyText,
+    original.text,
+  );
+});
+
+test("nickname formatting applies only to an independently resolved incoming bubble", () => {
+  const groups = attachWechatNicknameFields([{
+    rows: [
+      line("群昵称", 118, 100, 80, 20),
+      line("正文", 136, 150, 80, 28),
+    ],
+    text: "群昵称正文",
+  }], { left: 136, right: 585 }).groups;
+  const prepared = {
+    groups,
+    labels: [null],
+    kinds: ["pixel-pending"],
+    sampleRows: [{ id: "bubble-0", groupIndex: 0, row: groups[0].rows[1] }],
+    nicknameCandidateCount: 1,
+  };
+
+  const incoming = finalizeWechatMessages(prepared, [{
+    id: "bubble-0", side: "them",
+  }]);
+  const outgoing = finalizeWechatMessages(prepared, [{
+    id: "bubble-0", side: "me",
+  }]);
+
+  assert.equal(incoming.markdown, "[群昵称] 正文");
+  assert.equal(incoming.speakerStats.nicknameApplied, 1);
+  assert.equal(outgoing.markdown, "[我] 群昵称正文");
+  assert.equal(outgoing.speakerStats.nicknameApplied, 0);
+});
+
+test("nickname metadata leaves the original double-peak sampling box unchanged", () => {
+  const prepared = prepareWechatMessages([
+    line("左侧基准一", 136, 10, 100, 28),
+    line("群昵称", 118, 100, 100, 20),
+    line("满宽正文", 136, 150, 449, 34),
+    line("左侧基准二", 136, 300, 100, 28),
+    line("右侧基准", 485, 400, 100, 28),
+  ]);
+  const pending = prepared.sampleRows.find(sample =>
+    sample.row.text === "满宽正文"
+  );
+  const requests = makeRegionRequests(prepared, ["file:///frame.jpg"]);
+
+  assert.equal(prepared.nicknameCandidateCount, 1);
+  assert.equal(prepared.groups[pending.groupIndex].rows.length, 2);
+  assert.equal(pending.row.text, "满宽正文");
+  assert.deepEqual(requests.find(request => request.id === pending.id), {
+    id: pending.id,
+    groupIndex: pending.groupIndex,
+    frameIndex: 0,
+    uri: "file:///frame.jpg",
+    x: 136,
+    y: 150,
+    width: 449,
+    height: 34,
+  });
+});
+
+test("unclear nickname layouts preserve the complete legacy message", () => {
+  const cases = [
+    {
+      name: "ordinary wrapped body",
+      rows: [
+        line("正文第一行", 136, 100, 180, 28),
+        line("正文第二行", 136, 130, 180, 28),
+      ],
+    },
+    {
+      name: "OCR combined nickname and body",
+      rows: [line("群昵称正文", 129, 100, 300, 25)],
+    },
+    {
+      name: "tiny OCR fragment before body",
+      rows: [
+        line("残片", 113, 100, 80, 14),
+        line("正文", 136, 143, 80, 28),
+      ],
+    },
+  ];
+
+  for (const sample of cases) {
+    const text = sample.rows.map(row => row.text).join("");
+    const [annotated] = attachWechatNicknameFields(
+      [{ rows: sample.rows, text }],
+      { left: 136, right: 585 },
+    ).groups;
+    assert.equal(annotated.nickname, null, sample.name);
+    assert.equal(annotated.text, text, sample.name);
+  }
+});
+
+test("an internal high-confidence nickname starts a new lossless message group", () => {
+  const rows = [
+    line("前一条第一行", 129, 100, 449, 23),
+    line("前一条第二行", 129, 132, 120, 27),
+    line("群昵称", 117, 193, 80, 24),
+    line("新正文", 136, 246, 80, 28),
+  ];
+  const text = rows.map(row => row.text).join("");
+  const result = attachWechatNicknameFields(
+    [{ rows, text }],
+    { left: 136, right: 585 },
+  );
+
+  assert.equal(result.internalSplitCount, 1);
+  assert.equal(result.groups.length, 1);
+  assert.equal(result.groups[0].nickname, null);
+  assert.equal(result.groups[0].messageSegments.length, 2);
+  assert.deepEqual(result.groups[0].messageSegments[1].nickname, {
+    text: "群昵称",
+    bodyText: "新正文",
+    kind: "separate-top-line",
+  });
+  assert.equal(
+    result.groups[0].messageSegments.map(segment => segment.text).join(""),
+    text,
+  );
+  const rendered = finalizeWechatMessages({
+    groups: result.groups,
+    labels: ["them"],
+    kinds: ["definite-left"],
+    sampleRows: [],
+    nicknameCandidateCount: result.candidateCount,
+    nicknameHighConfidenceCount: result.highConfidenceCount,
+    nicknameWideBodyCount: result.wideBodyCount,
+    nicknameInternalSplitCount: result.internalSplitCount,
+  }, []);
+  assert.equal(rendered.markdown, [
+    "[对方] 前一条第一行前一条第二行",
+    "[群昵称] 新正文",
+  ].join("\n"));
+  assert.equal(attachWechatNicknameFields(
+    [{ rows, text }],
+    { left: 136, right: 585 },
+    { internal: false },
+  ).candidateCount, 0);
+});
+
+test("wide body boxes use a stricter second geometry tier", () => {
+  const rows = [
+    line("群昵称", 118, 100, 80, 20),
+    line("很长的正文首行", 126, 150, 449, 34),
+  ];
+  const result = attachWechatNicknameFields(
+    [{ rows, text: "群昵称很长的正文首行" }],
+    { left: 136, right: 585 },
+  );
+
+  assert.equal(result.highConfidenceCount, 0);
+  assert.equal(result.wideBodyCount, 1);
+  assert.equal(result.groups[0].nickname.kind, "separate-top-line-wide-body");
+  assert.equal(attachWechatNicknameFields(
+    [{ rows, text: "群昵称很长的正文首行" }],
+    { left: 136, right: 585 },
+    { wideBody: false },
+  ).candidateCount, 0);
+});
+
 test("unknown bubble color emits a warning and never guesses a speaker", () => {
   const prepared = prepareWechatMessages([
     line("左侧消息", 134, 100, 100, 30),
@@ -408,9 +592,53 @@ test("unknown bubble color emits a warning and never guesses a speaker", () => {
   }]);
 
   assert.equal(rendered.markdown.includes("双贴峰消息"), false);
+  assert.equal(rendered.markdown.includes("[我] 双贴峰消息"), false);
+  assert.equal(rendered.markdown.includes("[对方] 双贴峰消息"), false);
   assert.equal(rendered.speakerWarnings.length, 1);
   assert.match(rendered.speakerWarnings[0], /底色未判定/);
   assert.equal(rendered.speakerStats.pixelUnresolved, 1);
+});
+
+test("dark RGB samples omit every unresolved bubble and emit explicit warnings", () => {
+  const darkRgb = [
+    [32, 32, 32],
+    [24, 48, 31],
+    [62, 73, 80],
+  ];
+  const groups = darkRgb.map((rgb, index) => ({
+    rows: [line(`深色消息${index + 1}`, 134, 100 + index * 100, 451, 40)],
+    text: `深色消息${index + 1}`,
+  }));
+  const prepared = {
+    groups,
+    labels: Array(groups.length).fill(null),
+    kinds: Array(groups.length).fill("pixel-pending"),
+    sampleRows: groups.map((group, index) => ({
+      id: `bubble-${index}`,
+      groupIndex: index,
+      row: group.rows[0],
+    })),
+  };
+  const samples = darkRgb.map((rgb, index) => {
+    const color = classifyBubbleColor(rgb);
+    assert.equal(color, "system");
+    return {
+      id: `bubble-${index}`,
+      side: color === "self" ? "me" : color === "other" ? "them" : null,
+      rgb,
+      decodedPixels: 100,
+    };
+  });
+
+  const rendered = finalizeWechatMessages(prepared, samples);
+
+  assert.equal(rendered.markdown, "");
+  assert.equal(rendered.markdown.includes("[我]"), false);
+  assert.equal(rendered.markdown.includes("[对方]"), false);
+  assert.equal(rendered.speakerWarnings.length, 3);
+  assert.equal(rendered.speakerStats.dual, 3);
+  assert.equal(rendered.speakerStats.pixelResolved, 0);
+  assert.equal(rendered.speakerStats.pixelUnresolved, 3);
 });
 
 test("plain output groups only rows whose global y gap is below 18px", () => {

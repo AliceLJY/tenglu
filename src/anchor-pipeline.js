@@ -15,6 +15,10 @@ const {
   anchorFramePlan,
   reconcileAnchorTiming,
 } = require("./pipeline-utils");
+const {
+  anchorResultStatus,
+  shouldFailEmptyAnchorOutput,
+} = require("./result-policy");
 const { PRESETS } = require("./stitcher");
 
 const FPS = 4;
@@ -268,12 +272,11 @@ export async function processAnchorRecording(
         };
     rawTimings.markdown += now() - started;
 
-    if (!rendered.markdown.trim()) {
-      throw new Error(
-        rendered.speakerWarnings.length
-          ? `所有可输出气泡的底色都无法判定：${rendered.speakerWarnings.join("；")}`
-          : "OCR 没有识别到可输出的正文，请确认模式和录屏内容后重试。",
-      );
+    if (shouldFailEmptyAnchorOutput(
+      rendered.markdown,
+      rendered.speakerWarnings,
+    )) {
+      throw new Error("OCR 没有识别到可输出的正文，请确认模式和录屏内容后重试。");
     }
 
     started = now();
@@ -302,7 +305,7 @@ export async function processAnchorRecording(
 
     return {
       engine: "anchor",
-      status: allWarnings.length || timingWarning ? "warning" : "ok",
+      status: anchorResultStatus(allWarnings, timingWarning),
       markdown: rendered.markdown,
       timingWarning,
       warnings: allWarnings,
@@ -342,6 +345,13 @@ export async function processAnchorRecording(
         sampleResolvedCount: rendered.speakerStats.pixelResolved,
         sampleUnresolvedCount: rendered.speakerStats.pixelUnresolved,
         sampleErrorCount: rendered.speakerStats.pixelErrors,
+        nicknameCandidateCount: rendered.speakerStats.nicknameCandidates ?? 0,
+        nicknameHighConfidenceCount:
+          rendered.speakerStats.nicknameHighConfidence ?? 0,
+        nicknameWideBodyCount: rendered.speakerStats.nicknameWideBody ?? 0,
+        nicknameInternalSplitCount:
+          rendered.speakerStats.nicknameInternalSplits ?? 0,
+        nicknameAppliedCount: rendered.speakerStats.nicknameApplied ?? 0,
         decodedPixels: rendered.speakerStats.decodedPixels,
         sampledPixels: rendered.speakerStats.sampledPixels,
         nativeDecoderCount: sampleBatch.decoderCount,

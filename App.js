@@ -21,6 +21,12 @@ import { processRecording } from "./src/pipeline";
 import { processAnchorRecording } from "./src/anchor-pipeline";
 import { exportOcrCache } from "./src/ocr-cache-export";
 
+const {
+  anchorWarningNotice,
+  defaultEngineForPlatform,
+  stitchRetryRequest,
+} = require("./src/result-policy");
+
 const STITCH_TIMING_ROWS = [
   ["预扫", "prescan"],
   ["取帧与位移", "frameShift"],
@@ -109,13 +115,16 @@ function ModeButton({ active, label, onPress }) {
 
 export default function App() {
   const [mode, setMode] = useState("wechat");
-  const [engine, setEngine] = useState("stitch");
+  const [engine, setEngine] = useState(() =>
+    defaultEngineForPlatform(Platform.OS)
+  );
   const [captureOcrCache, setCaptureOcrCache] = useState(false);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState("等待选择录屏");
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [lastRun, setLastRun] = useState(null);
   const ocrExportComplete = result?.stats?.ocrExportFrameFiles != null;
   const awaitingOcrExport = Boolean(
     result?.engine === "anchor" &&
@@ -123,60 +132,48 @@ export default function App() {
     !ocrExportComplete,
   );
 
-  async function chooseVideo() {
-    if (busy || exporting || awaitingOcrExport) return;
+  async function runRecording(asset, requestedMode, requestedEngine) {
+    const processingStarted = Date.now();
     setError("");
     setResult(null);
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("需要相册权限才能读取你选择的录屏。");
-      return;
-    }
-
-    const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["videos"],
-      allowsMultipleSelection: false,
-      quality: 1,
-    });
-    if (picked.canceled || !picked.assets?.[0]) return;
-
-    const asset = picked.assets[0];
-    const processingStarted = Date.now();
+    setLastRun({ asset, mode: requestedMode });
     setBusy(true);
     setProgress("读取录屏");
     try {
-      const processor = engine === "anchor"
+      const processor = requestedEngine === "anchor"
         ? processAnchorRecording
         : processRecording;
       const output = await processor(
         asset,
-        mode,
+        requestedMode,
         setProgress,
-        { captureOcrCache: engine === "anchor" && captureOcrCache },
+        {
+          captureOcrCache:
+            requestedEngine === "anchor" && captureOcrCache,
+        },
       );
-      const actualEngine = output.engine ?? engine;
+      const actualEngine = output.engine ?? requestedEngine;
       const status = output.status ??
         (output.warnings?.length || output.timingWarning ? "warning" : "ok");
       setResult({
         ...output,
         engine: actualEngine,
-        requestedEngine: engine,
+        requestedEngine,
         status,
         stats: {
           ...output.stats,
-          app: mode,
+          app: requestedMode,
           durationMs: Math.round(Number(asset.duration)),
           screenAwakeRequested: true,
         },
       });
-      if (Platform.OS === "android" && engine === "anchor") {
+      if (Platform.OS === "android" && requestedEngine === "anchor") {
         setProgress(
           output.ocrCache
             ? "M3 处理结束，请先导出 OCR JSON"
             : status === "ok"
-              ? "M3 完成，请复制完整验收报告"
-              : "M3 处理结束但有告警，请复制完整验收报告",
+              ? "处理完成，可以复制 Markdown"
+              : "处理完成，但有内容风险，请查看提示",
         );
       } else {
         setProgress("完成，可以复制 Markdown");
@@ -185,7 +182,7 @@ export default function App() {
       const message = caught instanceof Error ? caught.message : String(caught);
       const failureStats = caught?.m3FailureStats ?? {};
       setError(message);
-      if (Platform.OS === "android" && engine === "anchor") {
+      if (Platform.OS === "android" && requestedEngine === "anchor") {
         setResult({
           engine: "anchor",
           requestedEngine: "anchor",
@@ -204,7 +201,7 @@ export default function App() {
             total: Date.now() - processingStarted,
           },
           stats: {
-            app: mode,
+            app: requestedMode,
             durationMs: Math.round(Number(asset.duration)),
             screenAwakeRequested: true,
             failure: message,
@@ -220,6 +217,37 @@ export default function App() {
     }
   }
 
+  async function chooseVideo() {
+    if (busy || exporting || awaitingOcrExport) return;
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError("需要相册权限才能读取你选择的录屏。");
+      return;
+    }
+
+    const picked = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsMultipleSelection: false,
+      quality: 1,
+    });
+    if (picked.canceled || !picked.assets?.[0]) return;
+
+    await runRecording(picked.assets[0], mode, engine);
+  }
+
+  async function retryWithStitch() {
+    const retry = stitchRetryRequest(lastRun);
+    if (busy || exporting || !retry) return;
+    if (awaitingOcrExport) {
+      const exported = await exportCapturedOcr();
+      if (!exported) return;
+    }
+    setEngine(retry.engine);
+    setMode(retry.mode);
+    await runRecording(retry.asset, retry.mode, retry.engine);
+  }
+
   async function copyResult() {
     if (!result?.markdown) return;
     await Clipboard.setStringAsync(result.markdown);
@@ -233,7 +261,7 @@ export default function App() {
   }
 
   async function exportCapturedOcr() {
-    if (!result?.ocrCache || exporting) return;
+    if (!result?.ocrCache || exporting) return false;
     setExporting(true);
     const started = Date.now();
     try {
@@ -262,14 +290,18 @@ export default function App() {
         `${exported.folderName}\n${exported.frameFileCount} 个逐帧 JSON；` +
         "回传时只需选择文件夹根部的 M3-OCR-BUNDLE.json。",
       );
+      return true;
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       setProgress("OCR JSON 未导出");
       Alert.alert("OCR JSON 未导出", message);
+      return false;
     } finally {
       setExporting(false);
     }
   }
+
+  const userWarning = anchorWarningNotice(result);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -303,7 +335,8 @@ export default function App() {
         {Platform.OS === "android" && engine === "anchor" ? (
           <>
             <Text style={styles.anchorHint}>
-              M3 本批只验收浅色模式；未知气泡颜色会明确告警，不会猜测发言人。
+              深色模式尚未在真机验证；未知气泡颜色会明确告警并跳过该气泡，
+              不会猜测发言人。
             </Text>
             <View style={styles.exportToggleRow}>
               <View style={styles.exportToggleText}>
@@ -356,7 +389,19 @@ export default function App() {
         <Text style={styles.progress}>{progress}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {result?.warnings?.length ? (
+        {userWarning ? (
+          <View style={styles.warningBox}>
+            <Text style={styles.warningTitle}>{userWarning.title}</Text>
+            <Text style={styles.warningText}>{userWarning.message}</Text>
+            <View style={styles.warningAction}>
+              <Button
+                disabled={busy || exporting || !lastRun}
+                onPress={retryWithStitch}
+                title="用拼接路径重新处理"
+              />
+            </View>
+          </View>
+        ) : result?.warnings?.length ? (
           <View style={styles.warningBox}>
             <Text style={styles.warningTitle}>还原告警</Text>
             {result.warnings.map((warning, index) => (
@@ -553,6 +598,9 @@ const styles = StyleSheet.create({
   warningText: {
     color: "#4f3b00",
     marginTop: 2,
+  },
+  warningAction: {
+    marginTop: 10,
   },
   timingBox: {
     borderColor: "#cccccc",

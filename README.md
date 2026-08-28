@@ -2,7 +2,7 @@
 
 **Turn a scrolling screen recording into a clean Markdown transcript. 100% on-device.**
 
-Record yourself scrolling through a WeChat chat or a Xiaohongshu comment section. Tenglu stitches the frames into one long image, OCRs it, and hands you a faithful, ordered, copy-pasteable transcript — ready to feed to any AI you choose.
+Record yourself scrolling through a WeChat chat or a Xiaohongshu comment section. On Android, Tenglu now uses text anchors by default: it OCRs selected frames, derives scroll offsets from shared text, dedupes by geometry, and hands you a faithful, ordered, copy-pasteable transcript. The earlier image-stitching pipeline remains available as a fallback.
 
 The name comes from 誊录, the Song-dynasty imperial examination practice of having clerks copy every candidate's paper verbatim so graders couldn't recognize handwriting. That is the whole product promise: **faithful transcription, zero interpretation.**
 
@@ -16,9 +16,9 @@ Apps summarize your content for you and keep the raw material. Tenglu does the o
 
 ## Measured accuracy
 
-Validated against ground truth exported from the actual WeChat database (44 messages, real conversation):
+Validated against ground truth exported from the actual WeChat database (44 messages, real conversation). The Android column records the earlier stitching baseline; the Android text-anchor default is reported under M3 below.
 
-| Metric | Android (ML Kit) | macOS (Vision) | iOS (Vision, independent impl.) |
+| Metric | Android stitching baseline (ML Kit) | macOS (Vision) | iOS (Vision, independent impl.) |
 |---|---|---|---|
 | Character-level accuracy | 96.2% | 99.6% | 99.5% |
 | Speaker attribution | 39/39 | 39/39 | 39/39 |
@@ -66,23 +66,29 @@ work on any scrolling text, but "should" is not "was measured".
 ## How it works
 
 ```
-video → sparse pre-scan → detect scroll region (hysteresis threshold, adaptive)
-      → fixed-interval frames → per-frame displacement (DS=4 coarse SAD search)
-      → keyframe selection (rebound frames excluded) → stitch (two-stage SAD + jump-cut guard)
+Android default:
+video → fixed-rate frame plan → per-frame OCR → fixed-UI removal
+      → text-anchor offsets + failure self-check → geometric dedupe
+      → ambiguous-bubble region sampling → Markdown
+
+Stitching fallback:
+video → sparse pre-scan → scroll-region detection → fixed-interval frames
+      → SAD displacement → keyframe selection → long-image stitching
       → segmented OCR → position-based dedupe → Markdown
 ```
 
 Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), Chinese):
 
 - **Prefer duplication over loss.** Overlap can be deduped; lost content is gone. Displacement estimates are conservative and the output layer cleans up.
-- **Don't parse structure.** Early versions tried to label "reply-to" and like-counts with regexes — 4 errors in 48 comments. Plain positional text: zero. The AI reading the transcript is better at structure than any regex.
+- **Don't infer hidden structure.** Early versions tried to label "reply-to" and like-counts with regexes — 4 errors in 48 comments. M3 never guesses those semantics from text. A group display name becomes a field only when OCR returned it as a geometrically separate row above the bubble; an unclear layout keeps the original text intact.
 - **Every self-check lied at least once.** The only reliable judge was comparing output against decrypted ground truth. If you can't diff against reality, you don't know your accuracy.
 
 ## Status
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
 - **M2 (done):** 247.0 s → 161.6 s on-device (−34.5%), accuracy unchanged throughout (byte-identical output at every level). Per-stage timing localised the real bottleneck: **JPEG decode in JS — 71% of the pipeline**, not the SAD search we all assumed.
-- **M3 (verified on device):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically, and sample a few pixels only for bubbles whose speaker coordinates alone cannot resolve. Same phone, same OCR engine, same ground truth as the stitching path: **6.4 s vs. 161.6 s (25× faster)** with character accuracy **91.4% vs. 90.6%** and speaker 39/39 on both. Generic mode passes all 42 anchor checks. Still gated behind a toggle — stitching remains the default until dark mode and longer recordings are covered.
+- **M3 (Android default in v0.3.0):** a text-anchor architecture that skips pixel alignment entirely — OCR selected frames, derive inter-frame offsets from shared text lines, dedupe geometrically, and sample a few pixels only for bubbles whose speaker coordinates alone cannot resolve. Same phone, same OCR engine, same ground truth as the stitching path: **6.4 s vs. 161.6 s (25× faster)** with character accuracy **91.4% vs. 90.6%** and speaker 39/39 on both. Generic mode passes all 42 anchor checks. The stitching path remains available in the path switch; if a self-check warns that content may be missing, the result page offers a one-tap stitching retry. Dark mode has not been verified on a device: an unresolved speaker is omitted with an explicit warning rather than being guessed.
+- **Group display names:** when OCR returns a smaller, independently positioned display-name row above an incoming WeChat bubble, M3 emits `[display name] message` instead of joining the name into the body. The supplied 44.2 s group-chat bundle produced 65 independent name fields while preserving all 1,976 OCR characters under reversible comparison. This is one-device offline replay evidence, not a claim of general group-chat or cross-resolution coverage.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development

@@ -27,6 +27,7 @@ const require = createRequire(import.meta.url);
 const { sampleBrightMedianRgb } = require("../src/ocr-utils.js");
 const { classifyBubbleColor } = require("../src/postprocess.js");
 const {
+  attachWechatNicknameFields,
   dedupePlacedLineGroups,
   estimateShift: estimateAnchorShift,
 } = require("../src/anchor-utils.js");
@@ -329,13 +330,16 @@ function renderWechat(lines) {
     }
   }
 
-  const labels = Array(groups.length).fill(null);
-  const kinds = Array(groups.length).fill("");
+  const nicknameResult = attachWechatNicknameFields(groups, { left, right });
+  const annotatedGroups = nicknameResult.groups;
+
+  const labels = Array(annotatedGroups.length).fill(null);
+  const kinds = Array(annotatedGroups.length).fill("");
   const pixelSamples = [];
   const speakerWarnings = [];
   let dualCount = 0;
-  for (let i = 0; i < groups.length; i++) {
-    const rows = groups[i].rows;
+  for (let i = 0; i < annotatedGroups.length; i++) {
+    const rows = annotatedGroups[i].rows;
     const hasL = rows.some(leftHit), hasR = rows.some(rightHit);
     const rightHits = new Set(rows.filter(rightHit).map(r => band(r.gy))).size;
     if (hasR && !hasL) {
@@ -386,9 +390,27 @@ function renderWechat(lines) {
       sampledPixels: pixelSamples.reduce((sum, s) => sum + s.sampledPixels, 0),
       repeatedRight: kinds.filter(k => k === "weak-right-repeat").length,
       defaultLeft: kinds.filter(k => k === "double-default-left").length,
+      nicknameCandidates: nicknameResult.candidateCount,
+      nicknameHighConfidence: nicknameResult.highConfidenceCount,
+      nicknameWideBody: nicknameResult.wideBodyCount,
+      nicknameInternalSplits: nicknameResult.internalSplitCount,
+      nicknameApplied: annotatedGroups.reduce((sum, group, index) =>
+        sum + (labels[index] === "them"
+          ? (group.messageSegments ?? []).filter(segment => segment.nickname).length
+          : 0), 0),
     },
-    text: groups
-      .map((g, i) => labels[i] ? `[${labels[i] === "me" ? "我" : "对方"}] ${g.text}` : null)
+    text: annotatedGroups
+      .map((g, i) => {
+        if (!labels[i]) return null;
+        if (labels[i] === "them") {
+          return (g.messageSegments ?? [{ text: g.text, nickname: g.nickname }])
+            .map(segment => segment.nickname
+              ? `[${segment.nickname.text}] ${segment.nickname.bodyText}`
+              : `[对方] ${segment.text}`)
+            .join("\n");
+        }
+        return `[我] ${g.text}`;
+      })
       .filter(Boolean)
       .join("\n"),
   };
@@ -443,6 +465,11 @@ if (rendered.speakerStats) {
   } else {
     console.error(`发言人双贴峰 ${s.dual} 个：纯坐标多行右峰 ${s.repeatedRight}，默认左峰 ${s.defaultLeft}`);
   }
+  console.error(
+    `群聊昵称字段：高置信 ${s.nicknameHighConfidence}，` +
+    `宽正文 ${s.nicknameWideBody}，组内重分 ${s.nicknameInternalSplits}，` +
+    `独立输出 ${s.nicknameApplied}`,
+  );
 }
 if (rendered.speakerWarnings?.length) {
   console.error(`\n⚠ 发言人采样 ${rendered.speakerWarnings.length}/${rendered.speakerStats.dual} 个未解决：`);

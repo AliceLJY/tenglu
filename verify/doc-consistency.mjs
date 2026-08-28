@@ -12,6 +12,7 @@
  */
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
+import { createHash } from "crypto";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const EXTRA = [process.env.HOME + "/Desktop/个人机遇/面试项目/誊录"];
@@ -73,6 +74,22 @@ const RULES = [
   { term: "2fc13155-b9c6-4034-b0a4-fdbfc6eb0b0a", allow: null },
   // 第五轮唯一候选已由 EAS 构建完成，所有交付字段都必须填真实值。
   { term: "待第五轮唯一候选构建完成后填写", allow: null },
+  // v0.3.0 起 Android 默认走文本锚点，拼接只作为可切换回退。
+  { term: "Still gated behind a toggle", allow: null },
+  { term: "stitching remains the default", allow: null },
+  { term: "目前仍藏在开关后面", allow: null },
+  { term: "默认路径仍是拼接", allow: null },
+  { term: "仍完整保留且默认选中", allow: null },
+  { term: "### 待 Alice 拍板：要不要替换拼接架构", allow: /已拍板/ },
+  { term: "拼接是默认，文本锚点可切换", allow: null },
+  // README 的产品描述与流程图也必须反映双路径，不能继续把拼接写成唯一流程。
+  { term: "stitches the frames into one long image", allow: null },
+  { term: "把帧拼成一张长图", allow: null },
+  { term: "→ stitch (two-stage SAD", allow: null },
+  { term: "→ 拼接（两级 SAD", allow: null },
+  // 上线批必须生成新的两段浅色真机清单与 APK，不能复用第五轮候选。
+  { term: "# M3 第五轮 Android 真机验收清单", allow: null },
+  { term: "895881b9-2a79-4a6b-8f91-b4180a0d72df", allow: null },
   // 第五轮性能候选不再把完整 4fps 诊断采集混入 ≤40s 验收。
   { term: "验收时保持开启", allow: null },
   { term: "报告未证明完整 4fps OCR 已采集并导出", allow: null },
@@ -95,6 +112,13 @@ const RULES = [
   { term: "默认去重只在至少三帧", allow: /相似度|文本变体/ },
   { term: "严格多数时替代“更长胜出”", allow: /相似度|文本变体/ },
   { term: "全文至少 3 票且严格过半时采用多数 observation", allow: /相似度|文本变体/ },
+  // v0.3.0 已把可靠的群昵称行独立为 Markdown 发言人字段。
+  { term: "昵称字段仍待独立验证", allow: null },
+  { term: "群昵称字段尚未适配", allow: null },
+  // 发言人颜色未定时保留现行安全行为：跳过该气泡并告警，不伪造字段。
+  { term: "明确标记发言人未定", allow: null },
+  // 昵称字段现在只按显式几何行保留；“任何昵称都不区分”的旧原则已被收窄。
+  { term: "不去判断\"这是昵称", allow: null },
 ];
 
 const SKIP = /node_modules|\.git|package-lock|\/out\/|doc-consistency/;   // 跳过自身：规则定义行必然含这些字样
@@ -109,6 +133,44 @@ function walk(dir, acc = []) {
 }
 
 let bad = 0;
+const FROZEN_SECTIONS = [
+  {
+    file: "README.md",
+    start: "### What was actually tested",
+    end: "## How it works",
+    sha256: "1b14b4dae897303cf2eb1b3f35795c67a41101c38b87cf465f8bcf603c6e92c7",
+  },
+  {
+    file: "README_CN.md",
+    start: "### 实际测过的范围",
+    end: "## 工作原理",
+    sha256: "f8d9ff46bc2568cfb61b845d83f970e722909517426253c7eb6ab8ce805b1b01",
+  },
+];
+for (const frozen of FROZEN_SECTIONS) {
+  const text = readFileSync(join(ROOT, frozen.file), "utf8");
+  const start = text.indexOf(frozen.start);
+  const end = text.indexOf(frozen.end, start + frozen.start.length);
+  const section = start >= 0 && end > start ? text.slice(start, end) : "";
+  const actual = createHash("sha256").update(section).digest("hex");
+  if (actual === frozen.sha256) continue;
+  console.log(`✗ ${frozen.file}  Alice 指定的实测范围段被改动`);
+  bad++;
+}
+const EXPECTED_VERSION = "0.3.0";
+const packageJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const appJson = JSON.parse(readFileSync(join(ROOT, "app.json"), "utf8"));
+const packageLock = JSON.parse(readFileSync(join(ROOT, "package-lock.json"), "utf8"));
+for (const [label, actual] of [
+  ["package.json", packageJson.version],
+  ["app.json", appJson.expo?.version],
+  ["package-lock.json", packageLock.version],
+  ["package-lock.json packages['']", packageLock.packages?.[""]?.version],
+]) {
+  if (actual === EXPECTED_VERSION) continue;
+  console.log(`✗ ${label}  版本应为 ${EXPECTED_VERSION}，实际 ${actual ?? "缺失"}`);
+  bad++;
+}
 for (const file of [...walk(ROOT), ...EXTRA.flatMap(d => { try { return walk(d); } catch { return []; } })]) {
   const text = readFileSync(file, "utf8");
   // 已封存的历史文档豁免：顶部自带封存标记 + 明写"以 PLAN.md 为准"的，

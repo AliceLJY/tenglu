@@ -610,6 +610,120 @@ function findAlignPeaks(lines) {
   return { left: peak(leftCounts)[0], right: peak(rightCounts)[0] };
 }
 
+/**
+ * Keep a group-chat display name separate from the message body when Vision / ML
+ * Kit returned it as its own top row. This is deliberately geometry-only: no
+ * name dictionaries, punctuation guesses, or text normalization are involved.
+ *
+ * `group.text` remains the lossless legacy representation. Callers may use the
+ * optional nickname field only after the bubble is independently classified as
+ * an incoming message; every rejected layout therefore falls back byte-for-byte.
+ */
+function attachWechatNicknameFields(groups, peaks, options = {}) {
+  const leftHit = line =>
+    Math.abs(line.x - peaks.left) <= ANCHOR_CONFIG.alignTolerance;
+  const rightHit = line =>
+    Math.abs(line.x + line.w - peaks.right) <= ANCHOR_CONFIG.alignTolerance;
+
+  const pairKind = (nicknameRow, bodyRow) => {
+    if (!nicknameRow || !bodyRow ||
+        !leftHit(nicknameRow) || rightHit(nicknameRow) ||
+        !leftHit(bodyRow)) {
+      return null;
+    }
+    const nicknameInset = peaks.left - nicknameRow.x;
+    const bodyDelta = bodyRow.x - peaks.left;
+    const dx = bodyRow.x - nicknameRow.x;
+    const dy = bodyRow.gy - nicknameRow.gy;
+    const common =
+      nicknameInset >= 14 && nicknameInset <= 30 &&
+      nicknameRow.h >= 16 && nicknameRow.h <= 27 &&
+      dy >= 44 && dy <= 56;
+    if (!common) return null;
+    if (bodyDelta >= -2 && bodyDelta <= 2 &&
+        bodyRow.h >= 26 && bodyRow.h <= 37 && dx >= 14) {
+      return "separate-top-line";
+    }
+    // A long body line can make ML Kit extend its box 3–11px left of the
+    // normal body peak. Its much larger glyph box keeps this second tier from
+    // accepting the small quote/OCR fragments seen in the device bundle.
+    if (options.wideBody !== false &&
+        bodyDelta >= -11 && bodyDelta <= -3 &&
+        bodyRow.h >= 31 && bodyRow.h <= 37 &&
+        bodyRow.h - nicknameRow.h >= 5 && dx >= 7) {
+      return "separate-top-line-wide-body";
+    }
+    return null;
+  };
+
+  let highConfidenceCount = 0;
+  let wideBodyCount = 0;
+  let internalSplitCount = 0;
+  const annotated = groups.map(group => {
+    const matches = new Map();
+    for (let index = 0; index < group.rows.length - 1; index++) {
+      if (index > 0 && options.internal === false) continue;
+      const kind = pairKind(group.rows[index], group.rows[index + 1]);
+      if (kind) matches.set(index, kind);
+    }
+    const starts = [
+      0,
+      ...[...matches.keys()].filter(index => index > 0),
+      group.rows.length,
+    ].sort((left, right) => left - right);
+    const messageSegments = [];
+    for (let index = 0; index < starts.length - 1; index++) {
+      const start = starts[index];
+      const rows = group.rows.slice(start, starts[index + 1]);
+      const segment = {
+        rows,
+        text: rows.map(row => row.text).join(""),
+        nickname: null,
+      };
+      const kind = matches.get(start);
+      if (kind) {
+        const bodyText = rows.slice(1).map(row => row.text).join("");
+        segment.nickname = {
+          text: rows[0].text,
+          bodyText,
+          kind,
+        };
+        if (segment.nickname.text + segment.nickname.bodyText !== segment.text) {
+          segment.nickname = null;
+        } else if (kind === "separate-top-line-wide-body") {
+          wideBodyCount += 1;
+        } else {
+          highConfidenceCount += 1;
+        }
+      }
+      messageSegments.push(segment);
+    }
+    if (messageSegments.map(segment => segment.text).join("") !== group.text) {
+      return {
+        ...group,
+        nickname: null,
+        messageSegments: [{ rows: group.rows, text: group.text, nickname: null }],
+      };
+    }
+    internalSplitCount += Math.max(0, messageSegments.length - 1);
+    return {
+      ...group,
+      nickname: messageSegments.length === 1
+        ? messageSegments[0].nickname
+        : null,
+      messageSegments,
+    };
+  });
+
+  return {
+    groups: annotated,
+    candidateCount: highConfidenceCount + wideBodyCount,
+    highConfidenceCount,
+    wideBodyCount,
+    internalSplitCount,
+  };
+}
+
 function prepareWechatMessages(lines) {
   const peaks = findAlignPeaks(lines);
   const leftHit = line =>
@@ -653,11 +767,13 @@ function prepareWechatMessages(lines) {
     }
   }
 
-  const labels = Array(groups.length).fill(null);
+  const nicknameResult = attachWechatNicknameFields(groups, peaks);
+  const annotatedGroups = nicknameResult.groups;
+  const labels = Array(annotatedGroups.length).fill(null);
   const kinds = Array(groups.length).fill("");
   const sampleRows = [];
-  for (let index = 0; index < groups.length; index++) {
-    const rows = groups[index].rows;
+  for (let index = 0; index < annotatedGroups.length; index++) {
+    const rows = annotatedGroups[index].rows;
     const hasLeft = rows.some(leftHit);
     const hasRight = rows.some(rightHit);
     if (hasRight && !hasLeft) {
@@ -672,7 +788,17 @@ function prepareWechatMessages(lines) {
       sampleRows.push({ id: `bubble-${index}`, groupIndex: index, row });
     }
   }
-  return { groups, kinds, labels, peaks, sampleRows };
+  return {
+    groups: annotatedGroups,
+    kinds,
+    labels,
+    peaks,
+    sampleRows,
+    nicknameCandidateCount: nicknameResult.candidateCount,
+    nicknameHighConfidenceCount: nicknameResult.highConfidenceCount,
+    nicknameWideBodyCount: nicknameResult.wideBodyCount,
+    nicknameInternalSplitCount: nicknameResult.internalSplitCount,
+  };
 }
 
 function makeRegionRequests(prepared, frameUris) {
@@ -734,7 +860,15 @@ function finalizeWechatMessages(prepared, samples) {
   return {
     markdown: prepared.groups.map((group, index) => {
       const side = labels[index];
-      return side ? `[${side === "me" ? "我" : "对方"}] ${group.text}` : null;
+      if (!side) return null;
+      if (side === "them") {
+        return (group.messageSegments ?? [{ text: group.text, nickname: group.nickname }])
+          .map(segment => segment.nickname
+            ? `[${segment.nickname.text}] ${segment.nickname.bodyText}`
+            : `[对方] ${segment.text}`)
+          .join("\n");
+      }
+      return `[我] ${group.text}`;
     }).filter(Boolean).join("\n"),
     speakerWarnings: warnings,
     speakerSamples: usedSamples,
@@ -753,6 +887,15 @@ function finalizeWechatMessages(prepared, samples) {
         (sum, sample) => sum + (Number(sample.sampledPixels) || 0),
         0,
       ),
+      nicknameCandidates: prepared.nicknameCandidateCount ??
+        prepared.groups.filter(group => group.nickname).length,
+      nicknameHighConfidence: prepared.nicknameHighConfidenceCount ?? 0,
+      nicknameWideBody: prepared.nicknameWideBodyCount ?? 0,
+      nicknameInternalSplits: prepared.nicknameInternalSplitCount ?? 0,
+      nicknameApplied: prepared.groups.reduce((sum, group, index) =>
+        sum + (labels[index] === "them"
+          ? (group.messageSegments ?? []).filter(segment => segment.nickname).length
+          : 0), 0),
     },
   };
 }
@@ -777,6 +920,7 @@ function renderPlain(lines) {
 module.exports = {
   ANCHOR_CONFIG,
   analyzeAnchorFrames,
+  attachWechatNicknameFields,
   bandForY,
   boxContainment,
   checkAnchors,
