@@ -315,18 +315,20 @@ export default function App() {
           <>
             <Text style={styles.label}>处理路径</Text>
             <View accessibilityRole="radiogroup" style={styles.modeRow}>
-              <ModeButton
-                active={engine === "stitch"}
-                label="现有拼接"
-                onPress={() =>
-                  !busy && !exporting && !awaitingOcrExport && setEngine("stitch")
-                }
-              />
+              {/* 默认路径排第一位：Android 默认走文本锚点，拼接是回退。
+                  顺序与「模式」那行保持一致（默认选中的排左边）。 */}
               <ModeButton
                 active={engine === "anchor"}
                 label="文本锚点 M3"
                 onPress={() =>
                   !busy && !exporting && !awaitingOcrExport && setEngine("anchor")
+                }
+              />
+              <ModeButton
+                active={engine === "stitch"}
+                label="现有拼接"
+                onPress={() =>
+                  !busy && !exporting && !awaitingOcrExport && setEngine("stitch")
                 }
               />
             </View>
