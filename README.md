@@ -51,7 +51,7 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
 - **M2 (done):** 247.0 s → 161.6 s on-device (−34.5%), accuracy unchanged throughout (byte-identical output at every level). Per-stage timing localised the real bottleneck: **JPEG decode in JS — 71% of the pipeline**, not the SAD search we all assumed.
-- **M3 (in verification):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically. On-device WeChat run: **4.5 s vs. 161.6 s (36× faster)**, speaker 39/39, order 100%. It has **not** cleared the gates yet: character accuracy came in at 89.2% on device (below the 90% bar), and in generic mode ML Kit's less stable recognition drops the shared-text anchor count enough to trigger the built-in warning. Not shipped until both are fixed.
+- **M3 (verified on device):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically, and sample a few pixels only for bubbles whose speaker coordinates alone cannot resolve. Same phone, same OCR engine, same ground truth as the stitching path: **6.4 s vs. 161.6 s (25× faster)** with character accuracy **91.4% vs. 90.6%** and speaker 39/39 on both. Generic mode passes all 42 anchor checks. Still gated behind a toggle — stitching remains the default until dark mode and longer recordings are covered.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development
