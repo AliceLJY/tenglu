@@ -116,6 +116,7 @@ const detailRounded = Object.fromEntries(
 t = now();
 const out = S.stitch(regions, keep, w, vh);
 T.拼接 = Math.round(now() - t);
+regions.fill(null);
 
 // ---- 阶段四：BMP 编码（无损；不要用 jpeg-js 编码）----
 t = now();
