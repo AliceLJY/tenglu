@@ -20,11 +20,17 @@ Validated against ground truth exported from the actual WeChat database (44 mess
 
 | Metric | Android (ML Kit) | macOS (Vision) | iOS (Vision, independent impl.) |
 |---|---|---|---|
-| Character-level accuracy | 90.6% | 93.7% | 99.5% |
-| Speaker attribution | 95.1% | 95.1% | **100%** |
+| Character-level accuracy | 96.2% | 99.6% | 99.5% |
+| Speaker attribution | 39/39 | 39/39 | 39/39 |
 | Message order | 100% | 100% | 100% |
 
-Speaker attribution samples the bubble background color (WeChat green vs. white) rather than guessing from position — it survived three platforms and three OCR engines without dropping once.
+Denominator is 39: of the 44 recorded messages, 5 are pure sticker/emoji sends that no OCR
+engine can read, so they are excluded. Earlier revisions of this table reported the three
+columns under two different denominators (41 / 41 / 39), which made iOS look more accurate —
+under one denominator all three are the same result.
+
+Speaker attribution samples the bubble background color (WeChat green vs. white) rather than
+guessing from position — it held at 39/39 across three platforms and two OCR engines.
 
 ## How it works
 
@@ -45,7 +51,7 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
 - **M2 (done):** 247.0 s → 161.6 s on-device (−34.5%), accuracy unchanged throughout (byte-identical output at every level). Per-stage timing localised the real bottleneck: **JPEG decode in JS — 71% of the pipeline**, not the SAD search we all assumed.
-- **M3 (planned):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically. Measured against the same ground truth: **93.9% character accuracy, 95.1% speaker accuracy, ~10× faster**. Not shipped until it clears the same verification gates.
+- **M3 (in verification):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically. On-device WeChat run: **4.5 s vs. 161.6 s (36× faster)**, speaker 39/39, order 100%. It has **not** cleared the gates yet: character accuracy came in at 89.2% on device (below the 90% bar), and in generic mode ML Kit's less stable recognition drops the shared-text anchor count enough to trigger the built-in warning. Not shipped until both are fixed.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development
