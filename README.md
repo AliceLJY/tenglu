@@ -32,6 +32,30 @@ under one denominator all three are the same result.
 Speaker attribution samples the bubble background color (WeChat green vs. white) rather than
 guessing from position — it held at 39/39 across three platforms and two OCR engines.
 
+### What was actually tested
+
+Be clear about the scale — these two clips are the **entire** validation set:
+
+| | WeChat one-on-one chat | Xiaohongshu note + comments |
+|---|---|---|
+| Recording length | **27.0 s** | **32.0 s** |
+| Frames at 4 fps | 108 | 128 |
+| Screen | 720 × 1652 | 720 × 1652 |
+| Ground truth | 44 messages (15 mine / 29 theirs), 39 text-only totalling **569 characters** | none — no exported truth exists for this content |
+| Longest / shortest message | 133 chars / 1 char | — |
+| Total scroll distance | 3,744 px | 10,415 px |
+| Stitched long image | 720 × 5,106 | 720 × 13,558 |
+| Output | 40 messages | 202 lines / ~2,375 characters |
+
+So: **one 27-second WeChat conversation with a 569-character ground truth is the only
+character-level accuracy measurement in this README.** The Xiaohongshu clip has no exported
+ground truth, so it only verifies coverage (line count, scroll distance, anchor health) —
+not per-character correctness.
+
+**Only these two apps have ever been run.** WeChat one-on-one and Xiaohongshu. Not group chats,
+not other messengers, not dark mode, not recordings longer than ~30 seconds. Generic mode should
+work on any scrolling text, but "should" is not "was measured".
+
 ## How it works
 
 ```
