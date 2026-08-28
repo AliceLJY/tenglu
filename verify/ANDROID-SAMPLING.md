@@ -4,7 +4,17 @@
 
 文本锚点仍只使用 OCR 文本及其 `x/y/w/h` 计算滚动位移。只有微信满宽气泡同时贴住左右对齐峰、纯坐标无法判断发言人时，才读取原始帧中一个 OCR 文本框的小区域，借气泡底色判断方向。
 
-这份设计只说明 M3 验证通过后的 Android 接入方式，不修改当前 `App.js` 或 `src/` 拼接路径。Mac 验证器使用 `djpeg -crop`；Android 对应实现使用 [`BitmapRegionDecoder`](https://developer.android.com/reference/android/graphics/BitmapRegionDecoder)，不把整张 JPEG 展开成 RGBA。
+这份设计现已实现为 App 内可切换的 M3 独立路径；现有拼接处理器仍完整保留且默认选中。
+Mac 验证器使用 `djpeg -crop`；Android 对应实现位于
+`modules/tenglu-region-sampler`，使用
+[`BitmapRegionDecoder`](https://developer.android.com/reference/android/graphics/BitmapRegionDecoder)，
+不把整张 JPEG 展开成 RGBA。
+
+同一模块还负责 M3 的视频抽帧：使用 `MediaMetadataRetriever.OPTION_CLOSEST` 取得请求时刻
+的实际邻近帧，再编码为 JPEG 交给 ML Kit。不能复用 `expo-video-thumbnails` 的 Android
+实现，因为它采用 `OPTION_CLOSEST_SYNC`；真实小红书素材上 8.75s 和 10.5s 会落到同一
+关键帧，近似复现会从 202 行降到 175 行，并出现 1 对锚点 0 告警。这里的全帧视频解码是
+OCR 必需的抽帧步骤；JavaScript 仍不读取整帧 RGBA，气泡颜色仍只由区域解码取得。
 
 ## 输入与判定
 
@@ -21,7 +31,7 @@
 
 ## Android 调用方式
 
-建议放在 Kotlin 原生模块中，把同一帧的多个矩形一次传入；模块按图片路径分组，每张原始帧创建一个 decoder，并在该帧的所有矩形完成后释放。这样既避免整帧 Bitmap，也避免为同一 JPEG 重复解析文件头和重复跨 JS bridge。
+实现采用一个 Kotlin 批量接口，把同一帧的多个矩形一次传入；模块按图片路径分组，每张原始帧创建一个 decoder，并在该帧的所有矩形完成后释放。这样既避免整帧 Bitmap，也避免为同一 JPEG 重复解析文件头和重复跨 JS bridge。
 
 下列代码只展示资源与区域解码关系；中位数函数和结果类型从现有 JS 逻辑逐项移植：
 
@@ -94,12 +104,12 @@ M3 微信素材的实测如下，计时包含每次启动一个 `djpeg` 子进�
 | OCR 文本框像素合计 | 232,783 px |
 | `djpeg` 输出缓冲（含水平 MCU 对齐余量） | 235,734 px |
 | 最大单块 | 457 × 49 = 22,393 px |
-| 13 次 `djpeg -crop` 合计 | 39.6–47.6 ms |
+| 13 次 `djpeg -crop` 合计 | 39.6–55.8 ms |
 | 平均每块 | 3.0–3.7 ms |
 
 13 块按确认返回 `ARGB_8888` 计算，累计 Bitmap 像素缓冲约 0.90 MiB；按块顺序处理时，最大单块 Bitmap 约 87.5 KiB，不会同时常驻 13 份。示例还会同时分配同尺寸的 `IntArray`，仅这两份的瞬时占用至少约 175 KiB，另有中位数统计工作区。这里的“区域解码”保证不分配整帧 Bitmap，但 JPEG 解码器内部仍可能读取额外 MCU 或扫描数据，不能把像素面积比例直接当成耗时比例。
 
-Android 真机尚未测到这条路径，先采用保守估算：每块 10–30 ms，13 块共 0.13–0.39 s；再给 native module 调度、文件打开和 GC 留足余量，预算上限设为 1 s，即 M3 总耗时目标 40 s 的 ≤2.5%。计时范围应覆盖 decoder 创建、全部 `decodeRegion`、`getPixels`、中位数分类和 native 调度，不能只记录 `decodeRegion()`。接入真机时还必须单列区域数、解码像素数和未定数；如果超过 1 s，先检查 decoder 是否按帧复用以及 JS bridge 是否批量调用，不以扩大区域或整帧解码换取方便。
+Android 真机尚未测到这条路径，先采用保守估算：每块 10–30 ms，13 块共 0.13–0.39 s；再给 native module 调度、文件打开和 GC 留足余量，预算上限设为 1 s，即 M3 总耗时目标 40 s 的 ≤2.5%。计时范围覆盖 decoder 创建、全部 `decodeRegion`、`getPixels`、中位数分类和 native 调度，不能只记录 `decodeRegion()`。真机验收报告单列区域数、解码像素数和未定数；如果超过 1 s，先检查 decoder 是否按帧复用以及 JS bridge 是否批量调用，不以扩大区域或整帧解码换取方便。
 
 ## 失败与降级
 

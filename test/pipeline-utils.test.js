@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 
 const {
   fixedFpsTimes,
+  fixedFpsStrideTimes,
   ocrSegmentRanges,
+  reconcileAnchorTiming,
   reconcileFrameShiftTiming,
   thumbnailOptions,
   uniformTimes,
@@ -18,6 +20,22 @@ test("fixed 4fps produces the two verified recording frame counts", () => {
   assert.equal(wechat.at(-1), 26750);
   assert.equal(xiaohongshu.length, 128);
   assert.equal(xiaohongshu.at(-1), 31750);
+});
+
+test("M3 stride 7 requests the same 16 and 19 timestamps as the Mac verifier", () => {
+  const wechat = fixedFpsStrideTimes(26980.356, 4, 7);
+  const xiaohongshu = fixedFpsStrideTimes(32030.989, 4, 7);
+
+  assert.equal(wechat.length, 16);
+  assert.equal(wechat[0], 0);
+  assert.equal(wechat[1], 1750);
+  assert.equal(wechat.at(-1), 26250);
+  assert.equal(xiaohongshu.length, 19);
+  assert.equal(xiaohongshu.at(-1), 31500);
+  assert.throws(
+    () => fixedFpsStrideTimes(1000, 4, 0),
+    /stride must be a positive integer/,
+  );
 });
 
 test("uniform pre-scan includes both ends and the requested count", () => {
@@ -90,4 +108,21 @@ test("frame-shift timing reconciliation accepts a difference at the threshold", 
   assert.equal(result.unclassifiedMs, 200);
   assert.equal(result.thresholdMs, 200);
   assert.equal(result.shouldWarn, false);
+});
+
+test("M3 timing reconciliation accounts for every exclusive stage", () => {
+  const result = reconcileAnchorTiming(2000, {
+    frameExtract: 400,
+    frameOcr: 900,
+    uiPause: 50,
+    anchorLayout: 100,
+    speakerSampling: 150,
+    markdown: 50,
+    cleanup: 50,
+  });
+
+  assert.equal(result.accountedMs, 1700);
+  assert.equal(result.unclassifiedMs, 300);
+  assert.equal(result.thresholdMs, 100);
+  assert.equal(result.shouldWarn, true);
 });

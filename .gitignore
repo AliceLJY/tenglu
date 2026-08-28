@@ -3,8 +3,8 @@ node_modules/
 .eas/
 dist/
 coverage/
-android/
-ios/
+/android/
+/ios/
 *.log
 .DS_Store
 

@@ -27,6 +27,14 @@ function fixedFpsTimes(durationMs, fps) {
   );
 }
 
+/** Generate the same requested timestamps as ffmpeg fps=N plus index stride. */
+function fixedFpsStrideTimes(durationMs, fps, stride) {
+  if (!Number.isInteger(stride) || stride < 1) {
+    throw new RangeError("stride must be a positive integer");
+  }
+  return fixedFpsTimes(durationMs, fps).filter((_, index) => index % stride === 0);
+}
+
 const THUMBNAIL_QUALITY = Object.freeze({
   prescan: 0.4,
   shift: 0.4,
@@ -91,9 +99,44 @@ function reconcileFrameShiftTiming(frameShiftMs, details) {
   };
 }
 
+const ANCHOR_TIMING_KEYS = [
+  "frameExtract",
+  "frameOcr",
+  "uiPause",
+  "anchorLayout",
+  "speakerSampling",
+  "markdown",
+  "cleanup",
+];
+
+/** Reconcile mutually exclusive M3 stages against the end-to-end wall time. */
+function reconcileAnchorTiming(totalMs, details) {
+  if (!Number.isFinite(totalMs) || totalMs < 0) {
+    throw new RangeError("totalMs must be a non-negative finite number");
+  }
+  let accountedMs = 0;
+  for (const key of ANCHOR_TIMING_KEYS) {
+    const value = details?.[key];
+    if (!Number.isFinite(value) || value < 0) {
+      throw new RangeError(`${key} must be a non-negative finite number`);
+    }
+    accountedMs += value;
+  }
+  const unclassifiedMs = totalMs - accountedMs;
+  const thresholdMs = Math.max(100, totalMs * 0.01);
+  return {
+    accountedMs,
+    shouldWarn: Math.abs(unclassifiedMs) > thresholdMs,
+    thresholdMs,
+    unclassifiedMs,
+  };
+}
+
 module.exports = {
   fixedFpsTimes,
+  fixedFpsStrideTimes,
   ocrSegmentRanges,
+  reconcileAnchorTiming,
   reconcileFrameShiftTiming,
   thumbnailOptions,
   uniformTimes,

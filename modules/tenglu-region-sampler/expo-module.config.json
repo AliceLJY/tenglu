@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["com.aliceljy.tenglu.regionsampler.TengluRegionSamplerModule"]
+  }
+}

@@ -54,6 +54,13 @@ const RULES = [
   // M3 局部像素门禁后来补跑出更低的热缓存值；禁止只保留最初两次的窄区间。
   { term: "46.1–47.6 ms", allow: null },
   { term: "3.5–3.7 ms", allow: null },
+  // M3 Android 已进入独立候选路径，设计文档不能继续写成“以后再接入”。
+  { term: "只说明 M3 验证通过后的 Android 接入方式", allow: null },
+  { term: "这条路线目前只活在 `verify/` 下", allow: null },
+  // M3 真机路线已改为独立阶段计时，不能继续要求拼接架构的固定 13 项。
+  { term: "回传 13 项耗时 + Markdown", allow: null },
+  // 完整热缓存复跑区间已扩到 55.8ms，禁止保留较早的窄区间。
+  { term: "39.6–47.6 ms", allow: null },
 ];
 
 const SKIP = /node_modules|\.git|package-lock|\/out\/|doc-consistency/;   // 跳过自身：规则定义行必然含这些字样

@@ -703,9 +703,9 @@ Android 侧设计见 `verify/ANDROID-SAMPLING.md`（`BitmapRegionDecoder` 路线
 
 ### 还差的两条 Done when（都需要真机 + Alice 亲测）
 
-4. APK → 真机跑两段 → 回传 13 项耗时 + Markdown，目标总耗时 **≤40 秒**（现 161.6 秒）
+4. APK → 真机跑两段 → 回传新路线全部分项耗时、计时对账 + Markdown，目标总耗时 **≤40 秒**（现 161.6 秒）
 5. 与 M2-L3 真机输出逐字节比对（预期有差异，有差异时跑 `score.py` 看质量有没有掉）
 
-**前置条件**：这条路线目前只活在 `verify/` 下，进真机需要在 App 里实现
-「逐帧 ML Kit OCR + BitmapRegionDecoder 局部采样」。
-按交接文档，**拼接架构在真机验证通过前不能删**，接入应做成可切换的两条路径。
+**当前进度**：候选路线已经作为 Android App 内可切换的第二条路径实现，包含
+「逐帧 ML Kit OCR + BitmapRegionDecoder 局部采样」；尚待云端 APK 编译与 Alice 真机验收。
+按交接文档，**拼接架构在真机验证通过前不能删**，当前仍是默认路径。
