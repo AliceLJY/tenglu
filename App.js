@@ -55,7 +55,7 @@ const ANCHOR_TIMING_ROWS = [
 ];
 
 const ENGINE_LABELS = {
-  stitch: "现有拼接（M2-L3）",
+  stitch: "拼接（回退，M2-L3）",
   anchor: "文本锚点（M3）",
 };
 
@@ -326,7 +326,7 @@ export default function App() {
               />
               <ModeButton
                 active={engine === "stitch"}
-                label="现有拼接"
+                label="拼接（回退）"
                 onPress={() =>
                   !busy && !exporting && !awaitingOcrExport && setEngine("stitch")
                 }
