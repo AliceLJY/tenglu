@@ -59,9 +59,10 @@ character-level accuracy measurement in this README.** The Xiaohongshu clip has 
 ground truth, so it only verifies coverage (line count, scroll distance, anchor health) —
 not per-character correctness.
 
-**Only these two apps have ever been run.** WeChat one-on-one and Xiaohongshu. Not group chats,
-not other messengers, not dark mode, not recordings longer than ~30 seconds. Generic mode should
-work on any scrolling text, but "should" is not "was measured".
+**Only the three scenarios above have ever been run.** WeChat one-on-one, Xiaohongshu comments,
+and a WeChat group chat. Not other messengers, not dark mode, not recordings longer than ~45 s
+(the 44.2 s group chat is the longest so far). Generic mode should work on any scrolling text,
+but "should" is not "was measured".
 
 ## How it works
 
