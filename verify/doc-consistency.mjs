@@ -185,6 +185,54 @@ for (const file of ["PLAN.md", "verify/M3-DEVICE-ACCEPTANCE.md"]) {
     bad++;
   }
 }
+const EXPECTED_V030_RELEASE_DOCS = [
+  {
+    file: "README.md",
+    facts: [
+      "text anchors by default",
+      "image-stitching pipeline remains available as a fallback",
+      "5.913 s vs. 161.6 s (27.3× faster)",
+      "91.4% vs. 90.6%",
+    ],
+  },
+  {
+    file: "README_CN.md",
+    facts: [
+      "默认走文本锚点",
+      "长图拼接路径仍作为回退保留",
+      "5.913 秒 vs 161.6 秒（快 27.3 倍）",
+      "91.4% vs 90.6%",
+    ],
+  },
+  {
+    file: "verify/V0.3.0-RELEASE-NOTES.md",
+    facts: [
+      "5,913 ms",
+      "161,600 ms",
+      "91.4%",
+      "90.6%",
+      "39/41",
+      "顺序 100%",
+      "12,528 ms",
+      "42/42",
+      "深色模式尚未在真机验证",
+      "不会猜测发言人",
+      "群聊昵称字段化只在一台设备、一种分辨率上验证过",
+      "群聊没有消息级真值",
+      "27 秒录屏，569 字人工真值",
+      "32 秒录屏",
+      "44 秒录屏，60 条消息",
+    ],
+  },
+];
+for (const { file, facts } of EXPECTED_V030_RELEASE_DOCS) {
+  const text = readFileSync(join(ROOT, file), "utf8");
+  for (const fact of facts) {
+    if (text.includes(fact)) continue;
+    console.log(`✗ ${file}  缺少 v0.3.0 发布事实: ${fact}`);
+    bad++;
+  }
+}
 for (const file of [...walk(ROOT), ...EXTRA.flatMap(d => { try { return walk(d); } catch { return []; } })]) {
   const text = readFileSync(file, "utf8");
   // 已封存的历史文档豁免：顶部自带封存标记 + 明写"以 PLAN.md 为准"的，
