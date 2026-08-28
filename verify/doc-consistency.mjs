@@ -32,6 +32,22 @@ const RULES = [
   { term: "所有运算", allow: /不成立|不是|订正|⚠️/ },
   { term: "遍历约 98 万", allow: /不成立|不是|订正|错了|⚠️/ },
   { term: "收益已被数据否定", allow: /不是|订正|错的|⚠️/ },
+  // L3 实施方式：只能"先裁再降"，"整帧先降"会让采样行错开 2px、破坏逐字节一致
+  { term: "整帧先降采样", allow: /不是|不能|错|⚠️|会让|破坏/ },
+  { term: "整帧降到", allow: /不是|不能|错|⚠️/ },
+  // 归因：位移"阶段"约 2s/对是事实，但断言那 2s 属于 SAD/Hermes 是未证实的
+  { term: "Hermes 上约 2s", allow: /阶段|未知|未定|待测/ },
+  { term: "慢 100+ 倍", allow: /阶段|未知|未定|待测/ },
+  { term: "不是减少解码", allow: /订正|⚠️|已改/ },
+  // 计时项数：原 7 + 新 6 = 13
+  { term: "新增五项", allow: null },
+  { term: "五项细分计时", allow: null },
+  { term: "五项真机计时", allow: null },
+  { term: "五项必须", allow: null },
+  { term: "五项细分", allow: null },
+  // "位移计算 219s" 把整个阶段的耗时算在 SAD 头上；现行说法是"位移阶段"
+  { term: "位移计算 219", allow: null },
+  { term: "位移计算约 219", allow: null },
   { term: "逐帧位移（两级 SAD", allow: null },
   { term: "per-frame displacement (two-stage SAD", allow: null },
   { term: "逐帧 `estimateShift`", allow: null, allowFile: /交接-M1\.md$/ },
@@ -50,7 +66,11 @@ function walk(dir, acc = []) {
 
 let bad = 0;
 for (const file of [...walk(ROOT), ...EXTRA.flatMap(d => { try { return walk(d); } catch { return []; } })]) {
-  const lines = readFileSync(file, "utf8").split("\n");
+  const text = readFileSync(file, "utf8");
+  // 已封存的历史文档豁免：顶部自带封存标记 + 明写"以 PLAN.md 为准"的，
+  // 其内容是当时的历史记录，不必跟着现行结论改。豁免必须显式，不能靠遗漏。
+  if (/##\s*⚠️\s*本文档已封存/.test(text.slice(0, 2000))) continue;
+  const lines = text.split("\n");
   const fileLabel = relative(ROOT, file);
   lines.forEach((line, i) => {
     for (const { term, allow, allowFile } of RULES) {
