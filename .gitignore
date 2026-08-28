@@ -23,6 +23,11 @@ ios/
 *.jpeg
 *.mp4
 *.mov
+*.mkv
+*.webp
+*.heic
+*.heif
+*.avif
 verify/groundtruth.json
 verify/expected_output.md
 verify/out/
