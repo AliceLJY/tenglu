@@ -97,17 +97,17 @@ function validateReport(text, expectedMode, allowWarning, allowFailed) {
   }
   if (status !== "failed") {
     for (const key of [
+      "fps",
       "anchorPairCount",
       "anchorPassedCount",
       "anchorDetails",
       "stride",
       "maxAnchorGapMs",
       "sourceFrameCount",
+      "extractedFrameCount",
       "frameCount",
       "ocrCaptureEnabled",
       "ocrCapturedFrameCount",
-      "ocrExportFrameFiles",
-      "ocrExportBytes",
       "dedupeCandidateGroups",
       "dedupeMajorityChosen",
       "dedupeChangedSelection",
@@ -115,6 +115,8 @@ function validateReport(text, expectedMode, allowWarning, allowFailed) {
       "sampleUnresolvedCount",
       "decodedPixels",
       "frameExtractionMethod",
+      "nativeFrameExtractMs",
+      "nativeFrameExtractPerFrameMs",
       "timingDeltaMs",
       "timingThresholdMs",
       "cleanupAttemptCount",
@@ -124,17 +126,65 @@ function validateReport(text, expectedMode, allowWarning, allowFailed) {
     ]) {
       if (!(key in stats)) throw new Error(`报告统计缺少 ${key}`);
     }
-    if (stats.ocrCaptureEnabled !== true ||
-        stats.ocrCapturedFrameCount !== stats.sourceFrameCount ||
-        stats.ocrExportFrameFiles !== stats.sourceFrameCount) {
-      throw new Error("报告未证明完整 4fps OCR 已采集并导出");
+    const expectedApp = mode === "微信" ? "wechat" : "generic";
+    const expectedStride = expectedApp === "wechat" ? 5 : 3;
+    const expectedGapMs = expectedStride * 1000 / 4;
+    if (stats.app !== expectedApp) {
+      throw new Error(`报告统计模式不符：预期 ${expectedApp}，实际 ${stats.app}`);
     }
-    if (stats.stride !== 3 || stats.maxAnchorGapMs !== 750) {
-      throw new Error("报告不是本批 stride=3 / 最大间隔 750ms 候选");
+    if (stats.screenAwakeRequested !== true) {
+      throw new Error("报告没有证明处理期间已请求保持屏幕常亮");
+    }
+    if (stats.frameExtractionMethod !==
+        "MediaMetadataRetriever.OPTION_CLOSEST") {
+      throw new Error("报告没有使用 MediaMetadataRetriever.OPTION_CLOSEST 精确抽帧");
+    }
+    if (stats.fps !== 4 || stats.stride !== expectedStride ||
+        stats.maxAnchorGapMs !== expectedGapMs) {
+      throw new Error(
+        `报告不是本批 ${expectedApp} 的 4fps / stride=${expectedStride} / ` +
+        `最大间隔 ${expectedGapMs}ms 候选`,
+      );
+    }
+    const expectedSourceFrameCount = Math.max(
+      1,
+      Math.round(stats.durationMs * stats.fps / 1000),
+    );
+    if (!Number.isFinite(stats.durationMs) || stats.durationMs <= 0 ||
+        stats.sourceFrameCount !== expectedSourceFrameCount) {
+      throw new Error(
+        `源帧数不符：按 ${stats.durationMs}ms / ${stats.fps}fps 应为 ` +
+        `${expectedSourceFrameCount}，实际 ${stats.sourceFrameCount}`,
+      );
+    }
+    const expectedFrameCount = Math.ceil(stats.sourceFrameCount / stats.stride);
+    if (stats.frameCount !== expectedFrameCount) {
+      throw new Error(
+        `处理帧数不符：预期 ${expectedFrameCount}，实际 ${stats.frameCount}`,
+      );
+    }
+    if (stats.ocrCaptureEnabled !== false ||
+        stats.extractedFrameCount !== stats.frameCount ||
+        stats.ocrCapturedFrameCount !== stats.frameCount) {
+      throw new Error("最终性能报告混入了完整 4fps 诊断采集成本");
+    }
+    const expectedPerFrameMs = stats.extractedFrameCount
+      ? Math.round(stats.nativeFrameExtractMs * 10 / stats.extractedFrameCount) / 10
+      : null;
+    if (!Number.isFinite(stats.nativeFrameExtractPerFrameMs) ||
+        Math.abs(stats.nativeFrameExtractPerFrameMs - expectedPerFrameMs) > 0.11) {
+      throw new Error("抽帧单帧耗时没有使用实际 native 抽取帧数作分母");
     }
     if (!Array.isArray(stats.anchorDetails) ||
         stats.anchorDetails.length !== stats.anchorPairCount) {
       throw new Error("报告的逐对锚点统计不完整");
+    }
+    const expectedAnchorPairCount = Math.max(0, stats.frameCount - 1);
+    if (stats.anchorPairCount !== expectedAnchorPairCount) {
+      throw new Error(
+        `相邻帧锚点对数不符：预期 ${expectedAnchorPairCount}，` +
+        `实际 ${stats.anchorPairCount}`,
+      );
     }
     if (!stats.anchorDetails.every(detail =>
       "fuzzyCandidateVotes" in detail &&
@@ -142,6 +192,15 @@ function validateReport(text, expectedMode, allowWarning, allowFailed) {
       "fuzzyCandidateVoteRatio" in detail
     )) {
       throw new Error("报告缺少模糊救援的原始候选簇占比");
+    }
+    if (stats.anchorPassedCount !== stats.anchorPairCount) {
+      throw new Error(
+        `锚点自检未全过：${stats.anchorPassedCount}/${stats.anchorPairCount}`,
+      );
+    }
+    if (expectedApp === "wechat" &&
+        (stats.sampleRegionCount < 1 || stats.sampleUnresolvedCount !== 0)) {
+      throw new Error("微信局部采样没有触发，或仍有未定气泡");
     }
     if (stats.remainingTempFileCount !== 0) {
       throw new Error(`报告显示仍残留 ${stats.remainingTempFileCount} 个临时 JPEG`);
@@ -152,7 +211,11 @@ function validateReport(text, expectedMode, allowWarning, allowFailed) {
     }
   }
   const totalMatch = text.match(/^总耗时: (\d+) ms$/m);
-  return { mode, path, requestedPath, stats, status, totalMs: Number(totalMatch?.[1]) };
+  const totalMs = Number(totalMatch?.[1]);
+  if (status !== "failed" && (!Number.isFinite(totalMs) || totalMs > 40_000)) {
+    throw new Error(`总耗时 ${totalMs}ms 超过 40000ms 验收线`);
+  }
+  return { mode, path, requestedPath, stats, status, totalMs };
 }
 
 function digest(buffer) {
@@ -212,8 +275,12 @@ try {
       console.log(`sample_regions: ${report.stats.sampleRegionCount}`);
       console.log(`sample_unresolved: ${report.stats.sampleUnresolvedCount}`);
       console.log(`decoded_pixels: ${report.stats.decodedPixels}`);
-      console.log(`ocr_export_frames: ${report.stats.ocrExportFrameFiles}`);
-      console.log(`ocr_export_bytes: ${report.stats.ocrExportBytes}`);
+      console.log(`ocr_capture_enabled: ${report.stats.ocrCaptureEnabled}`);
+      console.log(`ocr_captured_frames: ${report.stats.ocrCapturedFrameCount}`);
+      console.log(`extracted_frames: ${report.stats.extractedFrameCount}`);
+      console.log(
+        `native_extract_ms_per_frame: ${report.stats.nativeFrameExtractPerFrameMs}`,
+      );
       console.log(`dedupe_consensus_changed: ${report.stats.dedupeChangedSelection}`);
       console.log(`timing_delta_ms: ${report.stats.timingDeltaMs}`);
       console.log(`timing_threshold_ms: ${report.stats.timingThresholdMs}`);

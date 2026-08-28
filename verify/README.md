@@ -73,7 +73,12 @@ node anchor-ocr.mjs /tmp/m3-device-ocr plain --stride 3 --out /tmp/replay.md
 
 默认锚点使用 0.90 Levenshtein 相似度、互为唯一最佳和位移簇门禁；默认去重只在至少三帧
 严格多数、且多数版本与更长版本相似度 ≥0.8 时替代“更长胜出”。删除测试分别用
-`--anchors exact`、`--stride 7` 和
-`--dedupe longer`。统计 JSON 位于导出目录的 `meta/`，不会混进 `ocr/` 被误读成一帧。
+`--anchors exact`、微信 `--stride 3`、通用 `--stride 5` 和 `--dedupe longer`。统计 JSON 位于
+导出目录的 `meta/`，不会混进 `ocr/` 被误读成一帧。
 导入器会拒绝缺帧、文件名/sourceIndex 不连续、timeMs 不递增或没有证明完整 4fps 捕获的
 bundle，避免把残缺缓存当成删除测试材料。
+
+第五轮已经用第四轮导出的 108 / 128 帧真机缓存完成参数验证。最终性能验收默认关闭完整
+4fps 诊断采集，只抽取微信 stride=5 的 22 帧或通用 stride=3 的 43 帧；导出开关仍保留，
+需要新的完整缓存时可单独开启。报告同时给出实际 native 抽取帧数和单帧耗时，不能再用
+stride 后的算法帧数去除完整 4fps 抽取耗时。

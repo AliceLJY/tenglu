@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  PRESETS,
   cropRows,
   detectScrollRegion,
   dedupeLines,
@@ -15,6 +16,22 @@ const {
   stitch,
   toGray,
 } = require("../src/stitcher");
+
+test("M3 frame density follows the verified mode presets without changing stitch presets", () => {
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(PRESETS).map(([app, preset]) => [
+        app,
+        { preScan: preset.preScan, mode: preset.mode, anchorStride: preset.anchorStride },
+      ]),
+    ),
+    {
+      wechat: { preScan: 12, mode: "wechat", anchorStride: 5 },
+      xiaohongshu: { preScan: 24, mode: "plain", anchorStride: 3 },
+      generic: { preScan: 24, mode: "plain", anchorStride: 3 },
+    },
+  );
+});
 
 function solidRgba(width, height, value) {
   const rgba = new Uint8Array(width * height * 4);

@@ -17,7 +17,51 @@ const TIMINGS = [
   "总耗时: 310 ms",
 ].join("\n");
 
-function report(mode, markdown = "hello") {
+function report(mode, markdown = "hello", overrides = {}) {
+  const isWechat = mode === "微信";
+  const stride = isWechat ? 5 : 3;
+  const sourceFrameCount = isWechat ? 108 : 128;
+  const frameCount = Math.ceil(sourceFrameCount / stride);
+  const anchorPairCount = frameCount - 1;
+  const nativeFrameExtractMs = 100;
+  const stats = {
+    app: isWechat ? "wechat" : "generic",
+    durationMs: isWechat ? 26980 : 32031,
+    screenAwakeRequested: true,
+    fps: 4,
+    anchorPairCount,
+    anchorPassedCount: anchorPairCount,
+    anchorDetails: Array.from({ length: anchorPairCount }, (_, index) => ({
+      pair: `f_${index}→f_${index + 1}`,
+      fuzzyCandidateVotes: 0,
+      fuzzyCandidateTotal: 0,
+      fuzzyCandidateVoteRatio: null,
+    })),
+    stride,
+    maxAnchorGapMs: stride * 250,
+    sourceFrameCount,
+    extractedFrameCount: frameCount,
+    frameCount,
+    ocrCaptureEnabled: false,
+    ocrCapturedFrameCount: frameCount,
+    dedupeCandidateGroups: 50,
+    dedupeMajorityChosen: 20,
+    dedupeChangedSelection: 4,
+    sampleRegionCount: isWechat ? 13 : 0,
+    sampleUnresolvedCount: 0,
+    decodedPixels: isWechat ? 200000 : 0,
+    frameExtractionMethod: "MediaMetadataRetriever.OPTION_CLOSEST",
+    nativeFrameExtractMs,
+    nativeFrameExtractPerFrameMs:
+      Math.round(nativeFrameExtractMs * 10 / frameCount) / 10,
+    timingDeltaMs: 2,
+    timingThresholdMs: 100,
+    cleanupAttemptCount: 1,
+    remainingTempFileCount: 0,
+    nativeStaleTempFileCount: 0,
+    nativeStaleTempFileDeletedCount: 0,
+    ...overrides,
+  };
   return [
     "路径: 文本锚点（M3）",
     "请求路径: 文本锚点（M3）",
@@ -29,40 +73,7 @@ function report(mode, markdown = "hello") {
     "计时对账: 通过",
     "",
     "统计:",
-    JSON.stringify({
-      app: mode === "微信" ? "wechat" : "generic",
-      durationMs: 1000,
-      screenAwakeRequested: true,
-      anchorPairCount: 15,
-      anchorPassedCount: 15,
-      anchorDetails: Array.from({ length: 15 }, (_, index) => ({
-        pair: `f_${index}→f_${index + 1}`,
-        fuzzyCandidateVotes: 0,
-        fuzzyCandidateTotal: 0,
-        fuzzyCandidateVoteRatio: null,
-      })),
-      stride: 3,
-      maxAnchorGapMs: 750,
-      sourceFrameCount: 108,
-      frameCount: 36,
-      ocrCaptureEnabled: true,
-      ocrCapturedFrameCount: 108,
-      ocrExportFrameFiles: 108,
-      ocrExportBytes: 123456,
-      dedupeCandidateGroups: 50,
-      dedupeMajorityChosen: 20,
-      dedupeChangedSelection: 4,
-      sampleRegionCount: 13,
-      sampleUnresolvedCount: 0,
-      decodedPixels: 200000,
-      frameExtractionMethod: "MediaMetadataRetriever.OPTION_CLOSEST",
-      timingDeltaMs: 2,
-      timingThresholdMs: 100,
-      cleanupAttemptCount: 1,
-      remainingTempFileCount: 0,
-      nativeStaleTempFileCount: 0,
-      nativeStaleTempFileDeletedCount: 0,
-    }, null, 2),
+    JSON.stringify(stats, null, 2),
     "",
     "还原告警:",
     "无",
@@ -97,9 +108,142 @@ test("device acceptance validates a full M3 report before byte comparison", () =
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /candidate_source: full-report/);
   assert.match(run.stdout, /report_status: ok/);
-  assert.match(run.stdout, /anchor_selfcheck: 15\/15/);
+  assert.match(run.stdout, /anchor_selfcheck: 21\/21/);
+  assert.match(run.stdout, /ocr_capture_enabled: false/);
+  assert.match(run.stdout, /extracted_frames: 22/);
   assert.match(run.stdout, /byte_equal: true/);
   assert.equal(fs.readFileSync(output, "utf8"), "hello");
+});
+
+test("device acceptance rejects a full 4fps diagnostic capture as performance evidence", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    extractedFrameCount: 108,
+    ocrCaptureEnabled: true,
+    ocrCapturedFrameCount: 108,
+    nativeFrameExtractPerFrameMs: 0.9,
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /混入了完整 4fps 诊断采集成本/);
+});
+
+test("device acceptance rejects a mode/stride mismatch", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    stride: 3,
+    maxAnchorGapMs: 750,
+    frameCount: 36,
+    extractedFrameCount: 36,
+    ocrCapturedFrameCount: 36,
+    nativeFrameExtractPerFrameMs: 2.8,
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /stride=5/);
+});
+
+test("device acceptance rejects a non-exact frame extraction method", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    frameExtractionMethod: "MediaMetadataRetriever.OPTION_CLOSEST_SYNC",
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /OPTION_CLOSEST 精确抽帧/);
+});
+
+test("device acceptance rejects a report without the keep-awake request", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    screenAwakeRequested: false,
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /屏幕常亮/);
+});
+
+test("device acceptance rejects a self-consistent but incomplete source frame count", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const anchorDetails = Array.from({ length: 20 }, (_, index) => ({
+    pair: `f_${index}→f_${index + 1}`,
+    fuzzyCandidateVotes: 0,
+    fuzzyCandidateTotal: 0,
+    fuzzyCandidateVoteRatio: null,
+  }));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    sourceFrameCount: 105,
+    frameCount: 21,
+    extractedFrameCount: 21,
+    ocrCapturedFrameCount: 21,
+    nativeFrameExtractPerFrameMs: 4.8,
+    anchorPairCount: 20,
+    anchorPassedCount: 20,
+    anchorDetails,
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /源帧数不符/);
+});
+
+test("device acceptance rejects a report missing adjacent anchor pairs", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const anchorDetails = Array.from({ length: 20 }, (_, index) => ({
+    pair: `f_${index}→f_${index + 1}`,
+    fuzzyCandidateVotes: 0,
+    fuzzyCandidateTotal: 0,
+    fuzzyCandidateVoteRatio: null,
+  }));
+  const candidate = tempFile(dir, "report.txt", report("微信", "hello", {
+    anchorPairCount: 20,
+    anchorPassedCount: 20,
+    anchorDetails,
+  }));
+  const run = spawnSync(process.execPath, [
+    SCRIPT,
+    candidate,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /相邻帧锚点对数不符/);
 });
 
 test("device acceptance rejects a bare Markdown paste by default", () => {

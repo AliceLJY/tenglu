@@ -35,6 +35,20 @@ function fixedFpsStrideTimes(durationMs, fps, stride) {
   return fixedFpsTimes(durationMs, fps).filter((_, index) => index % stride === 0);
 }
 
+/** Separate the fast algorithm frame plan from the optional full diagnostic capture. */
+function anchorFramePlan(durationMs, fps, stride, captureEverySourceFrame = false) {
+  if (!Number.isInteger(stride) || stride < 1) {
+    throw new RangeError("stride must be a positive integer");
+  }
+  const sourceTimes = fixedFpsTimes(durationMs, fps);
+  const selectedTimes = sourceTimes.filter((_, index) => index % stride === 0);
+  return {
+    sourceTimes,
+    selectedTimes,
+    extractionTimes: captureEverySourceFrame ? sourceTimes : selectedTimes,
+  };
+}
+
 /** Choose a temporal sampling stride from the maximum allowed frame gap. */
 function strideForMaxGap(fps, maxGapMs) {
   if (!Number.isFinite(fps) || fps <= 0 ||
@@ -142,6 +156,7 @@ function reconcileAnchorTiming(totalMs, details) {
 }
 
 module.exports = {
+  anchorFramePlan,
   fixedFpsTimes,
   fixedFpsStrideTimes,
   ocrSegmentRanges,

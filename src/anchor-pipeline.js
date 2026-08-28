@@ -12,15 +12,12 @@ const {
   renderPlain,
 } = require("./anchor-utils");
 const {
-  fixedFpsTimes,
-  fixedFpsStrideTimes,
+  anchorFramePlan,
   reconcileAnchorTiming,
-  strideForMaxGap,
 } = require("./pipeline-utils");
+const { PRESETS } = require("./stitcher");
 
 const FPS = 4;
-const MAX_ANCHOR_GAP_MS = 750;
-const STRIDE = strideForMaxGap(FPS, MAX_ANCHOR_GAP_MS);
 
 function now() {
   return globalThis.performance?.now?.() ?? Date.now();
@@ -113,6 +110,12 @@ export async function processAnchorRecording(
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     throw new Error("无法读取录屏时长，请换一段本机相册里的录屏重试。");
   }
+  const preset = PRESETS[app] || PRESETS.generic;
+  const stride = preset.anchorStride;
+  if (!Number.isInteger(stride) || stride < 1) {
+    throw new Error(`模式 ${app} 缺少有效的文本锚点 stride。`);
+  }
+  const maxAnchorGapMs = stride * 1000 / FPS;
 
   const state = { cleanupRecorded: false, tempUris: new Set() };
   const rawTimings = {
@@ -127,10 +130,12 @@ export async function processAnchorRecording(
   const totalStarted = now();
 
   try {
-    const sourceTimes = fixedFpsTimes(durationMs, FPS);
-    const selectedTimes = fixedFpsStrideTimes(durationMs, FPS, STRIDE);
     const captureOcrCache = options.captureOcrCache === true;
-    const ocrTimes = captureOcrCache ? sourceTimes : selectedTimes;
+    const {
+      sourceTimes,
+      selectedTimes,
+      extractionTimes: ocrTimes,
+    } = anchorFramePlan(durationMs, FPS, stride, captureOcrCache);
     if (selectedTimes.length < 2) {
       throw new Error("录屏太短，文本锚点路径至少需要 2 帧。");
     }
@@ -158,7 +163,7 @@ export async function processAnchorRecording(
     let frameWidth = 0;
     let frameHeight = 0;
     for (let index = 0; index < ocrTimes.length; index++) {
-      const sourceIndex = captureOcrCache ? index : index * STRIDE;
+      const sourceIndex = captureOcrCache ? index : index * stride;
       const thumbnail = extractedFrames[index];
       if (!thumbnail?.uri || !Number.isFinite(thumbnail.width) ||
           !Number.isFinite(thumbnail.height)) {
@@ -201,7 +206,7 @@ export async function processAnchorRecording(
       await pauseForUi();
       rawTimings.uiPause += now() - started;
 
-      if (captureOcrCache && sourceIndex % STRIDE !== 0) {
+      if (captureOcrCache && sourceIndex % stride !== 0) {
         started = now();
         if (safeDelete(thumbnail.uri)) state.tempUris.delete(thumbnail.uri);
         rawTimings.cleanup += now() - started;
@@ -213,7 +218,7 @@ export async function processAnchorRecording(
     }
 
     const frames = capturedFrames
-      .filter(frame => frame.sourceIndex % STRIDE === 0)
+      .filter(frame => frame.sourceIndex % stride === 0)
       .map((frame, compactIndex) => ({
         ...frame,
         lines: frame.lines.map(line => ({ ...line, frameIndex: compactIndex })),
@@ -305,11 +310,12 @@ export async function processAnchorRecording(
       stats: {
         app,
         fps: FPS,
-        stride: STRIDE,
-        maxAnchorGapMs: MAX_ANCHOR_GAP_MS,
+        stride,
+        maxAnchorGapMs,
         sourceFrameCount: sourceTimes.length,
         ocrCaptureEnabled: captureOcrCache,
         ocrCapturedFrameCount: capturedFrames.length,
+        extractedFrameCount: extractedFrames.length,
         frameCount: frames.length,
         frameWidth,
         frameHeight,
@@ -343,6 +349,9 @@ export async function processAnchorRecording(
         nativeStaleTempFileCount: extracted.staleFileCount ?? 0,
         nativeStaleTempFileDeletedCount: extracted.staleDeletedCount ?? 0,
         nativeFrameExtractMs: Math.round(extracted.elapsedMs),
+        nativeFrameExtractPerFrameMs: extractedFrames.length
+          ? Math.round(extracted.elapsedMs * 10 / extractedFrames.length) / 10
+          : null,
         nativeSamplingMs: Math.round(sampleBatch.elapsedMs),
         timingAccountedMs: Math.round(reconciliation.accountedMs),
         timingDeltaMs: Math.round(reconciliation.unclassifiedMs),
@@ -437,8 +446,4 @@ export async function processAnchorRecording(
   }
 }
 
-export const ANCHOR_PIPELINE_CONSTANTS = {
-  FPS,
-  MAX_ANCHOR_GAP_MS,
-  STRIDE,
-};
+export const ANCHOR_PIPELINE_CONSTANTS = { FPS };

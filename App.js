@@ -110,7 +110,7 @@ function ModeButton({ active, label, onPress }) {
 export default function App() {
   const [mode, setMode] = useState("wechat");
   const [engine, setEngine] = useState("stitch");
-  const [captureOcrCache, setCaptureOcrCache] = useState(true);
+  const [captureOcrCache, setCaptureOcrCache] = useState(false);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState("等待选择录屏");
@@ -307,9 +307,10 @@ export default function App() {
             </Text>
             <View style={styles.exportToggleRow}>
               <View style={styles.exportToggleText}>
-                <Text style={styles.label}>导出完整 4fps OCR JSON</Text>
+                <Text style={styles.label}>导出完整 4fps OCR JSON（诊断）</Text>
                 <Text style={styles.anchorHint}>
-                  验收时保持开启；会增加耗时，但不导出视频或图片。
+                  最终性能验收保持关闭；开启会额外抽取并 OCR 每个源帧，
+                  但仍不导出视频或图片。
                 </Text>
               </View>
               <Switch
@@ -401,6 +402,9 @@ export default function App() {
                 OCR {result.stats.ocrLineCount} 行 → 去重后
                 {result.stats.uniqueLineCount} 行；累计滚动
                 {result.stats.cumulativeShift}px。{"\n"}
+                native 精确抽取 {result.stats.extractedFrameCount} 帧 /{" "}
+                {result.stats.nativeFrameExtractMs}ms /{" "}
+                {result.stats.nativeFrameExtractPerFrameMs}ms 每帧。{"\n"}
                 局部采样 {result.stats.sampleRegionCount} 区，解码
                 {result.stats.decodedPixels} px，已定
                 {result.stats.sampleResolvedCount}，未定

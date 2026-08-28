@@ -69,6 +69,24 @@ const RULES = [
   { term: "881e467c-50db-4ee2-856b-8ea11bf95da2", allow: null },
   // 第四轮唯一候选已构建完成，验收清单不能继续保留待填写占位。
   { term: "待本批 EAS 构建完成后填写", allow: null },
+  // 第五轮只能交付新的唯一候选，验收清单不能继续指向第四轮 APK。
+  { term: "2fc13155-b9c6-4034-b0a4-fdbfc6eb0b0a", allow: null },
+  // 第五轮性能候选不再把完整 4fps 诊断采集混入 ≤40s 验收。
+  { term: "验收时保持开启", allow: null },
+  { term: "报告未证明完整 4fps OCR 已采集并导出", allow: null },
+  { term: "两份报告都必须显示 stride=3", allow: null },
+  // stride 已按模式拆分：微信 5 / 1250ms，通用 3 / 750ms。
+  { term: "算法本身按最大相邻间隔 750 ms", allow: null },
+  { term: "M3 device stride comes from a 750ms", allow: null },
+  { term: "`--anchors exact`、`--stride 7` 和", allow: null },
+  // 第四轮把算法帧数误当成 native 实际抽取数，3.5 倍单帧回归已被 bundle 订正。
+  { term: "单帧成本涨 3.5 倍", allow: /不成立|订正|⚠️/ },
+  { term: "验收候选默认开启", allow: /第五轮|已改|历史/ },
+  { term: "统一规则是 4fps 下相邻处理帧不超过 750ms", allow: /推翻|订正|⚠️/ },
+  { term: "### 仍需真机回答", allow: /第四轮|第五轮|历史/ },
+  // 4d70d01 当时只修了离线 verifier；第五轮已把同一几何约束同步到 Android production helper。
+  { term: "现有拼接路径、`findAlignPeaks`", allow: null },
+  { term: "**已修**（本次提交）", allow: /离线验证脚本/ },
   // 多帧多数必须再过“同一文本变体”门禁，不能把相邻行的无关多数拿来替换。
   { term: "去重只在至少三票严格多数时推翻", allow: /文本变体/ },
   { term: "只有同一归一化全文至少 3 票且严格过半时采用多数", allow: /相似度|文本变体/ },

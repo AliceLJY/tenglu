@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  anchorFramePlan,
   fixedFpsTimes,
   fixedFpsStrideTimes,
   ocrSegmentRanges,
@@ -39,12 +40,37 @@ test("M3 stride 7 requests the same 16 and 19 timestamps as the Mac verifier", (
   );
 });
 
-test("M3 device stride comes from a 750ms maximum adjacent-frame gap", () => {
+test("strideForMaxGap converts a temporal limit to an index stride", () => {
   const stride = strideForMaxGap(4, 750);
   assert.equal(stride, 3);
   assert.equal(fixedFpsStrideTimes(26980.356, 4, stride).length, 36);
   assert.equal(fixedFpsStrideTimes(32030.989, 4, stride).length, 43);
   assert.throws(() => strideForMaxGap(0, 750), /positive finite/);
+});
+
+test("verified M3 mode strides request 22 WeChat and 43 generic frames", () => {
+  assert.equal(fixedFpsStrideTimes(26980.356, 4, 5).length, 22);
+  assert.equal(fixedFpsStrideTimes(32030.989, 4, 3).length, 43);
+});
+
+test("M3 performance plan extracts selected frames while diagnostics keep full 4fps", () => {
+  const fastWechat = anchorFramePlan(26980.356, 4, 5, false);
+  const diagnosticWechat = anchorFramePlan(26980.356, 4, 5, true);
+  const fastGeneric = anchorFramePlan(32030.989, 4, 3, false);
+  const diagnosticGeneric = anchorFramePlan(32030.989, 4, 3, true);
+
+  assert.deepEqual(
+    [fastWechat.sourceTimes.length, fastWechat.selectedTimes.length,
+      fastWechat.extractionTimes.length],
+    [108, 22, 22],
+  );
+  assert.equal(diagnosticWechat.extractionTimes.length, 108);
+  assert.deepEqual(
+    [fastGeneric.sourceTimes.length, fastGeneric.selectedTimes.length,
+      fastGeneric.extractionTimes.length],
+    [128, 43, 43],
+  );
+  assert.equal(diagnosticGeneric.extractionTimes.length, 128);
 });
 
 test("uniform pre-scan includes both ends and the requested count", () => {

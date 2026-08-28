@@ -389,9 +389,12 @@ function encodeBMP(rgba, w, h) {
  * 实测微信 12 帧已稳定正确，小红书要 24 帧（12/16 帧时返回 y6~68 = 屏高 3.8%）。
  */
 const PRESETS = {
-  wechat:      { preScan: 12, mode: "wechat" },   // 微信聊天：滚动慢、气泡有色差
-  xiaohongshu: { preScan: 24, mode: "plain"  },   // 小红书评论：滚动快、通篇左对齐
-  generic:     { preScan: 24, mode: "plain"  },   // 不确定就用它，多花约 12 次抽帧
+  // anchorStride 来自同一台真机的完整 ML Kit 缓存横扫：微信只有 5 达到 91.4% 字符级，
+  // 通用评论只有 3 做到 0 告警且累计位移 10415px（Vision 基准 10414px）。它只控制
+  // 文本锚点路径的取帧密度，不参与现有拼接路径的预扫、SAD 或去重。
+  wechat:      { preScan: 12, mode: "wechat", anchorStride: 5 },
+  xiaohongshu: { preScan: 24, mode: "plain",  anchorStride: 3 },
+  generic:     { preScan: 24, mode: "plain",  anchorStride: 3 },
 };
 
 /**

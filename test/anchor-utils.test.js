@@ -10,6 +10,7 @@ const {
   dedupePlacedLineGroups,
   estimateShift,
   finalizeWechatMessages,
+  findAlignPeaks,
   findFixedBands,
   makeRegionRequests,
   prepareWechatMessages,
@@ -326,6 +327,26 @@ test("full analysis keeps compact frame indexes across a reliable shift", () => 
   assert.equal(result.shifts[0].shift, 100);
   assert.equal(result.anchorWarnings.length, 0);
   assert.equal(result.uniqueLines.length, 3);
+});
+
+test("alignment peaks reject middle-screen repeats and one-character fragments", () => {
+  const leftMessages = Array.from({ length: 4 }, (_, index) =>
+    line(`左侧消息${index}`, 134, 100 + index * 40, 100));
+  const rightMessages = Array.from({ length: 4 }, (_, index) =>
+    line(`右侧消息${index}`, 485, 300 + index * 40, 100));
+  const repeatedMiddleRight = Array.from({ length: 9 }, (_, index) =>
+    line(`噪声${index}`, 10 + index, 500 + index * 20, 113 - index));
+  const oneCharacterFragments = Array.from({ length: 12 }, (_, index) =>
+    line("噪", 250, 700 + index * 20, 20 + index));
+  const screenWidthMarker = line("屏幕宽度标尺", 680, 60, 40);
+
+  assert.deepEqual(findAlignPeaks([
+    ...leftMessages,
+    ...rightMessages,
+    ...repeatedMiddleRight,
+    ...oneCharacterFragments,
+    screenWidthMarker,
+  ]), { left: 134, right: 585 });
 });
 
 test("double-peak bubble requests only its largest row using local y", () => {

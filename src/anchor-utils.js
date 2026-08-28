@@ -588,12 +588,22 @@ function analyzeAnchorFrames(frames, options = {}) {
 }
 
 function findAlignPeaks(lines) {
+  // Alignment peaks must be geometrically plausible: left-aligned text begins
+  // in the left half, while right-aligned text ends in the right half.
+  // Dense ML Kit sampling otherwise lets repeated middle-screen fragments win.
+  const width = Math.max(...lines.map(line => line.x + line.w), 1);
+  const midpoint = width / 2;
   const leftCounts = new Map();
   const rightCounts = new Map();
   for (const line of lines) {
-    leftCounts.set(line.x, (leftCounts.get(line.x) ?? 0) + 1);
+    if (Array.from(line.text).length < 2) continue;
+    if (line.x < midpoint) {
+      leftCounts.set(line.x, (leftCounts.get(line.x) ?? 0) + 1);
+    }
     const right = line.x + line.w;
-    rightCounts.set(right, (rightCounts.get(right) ?? 0) + 1);
+    if (right > midpoint) {
+      rightCounts.set(right, (rightCounts.get(right) ?? 0) + 1);
+    }
   }
   const peak = counts =>
     [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [NaN, 0];
