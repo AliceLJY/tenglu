@@ -47,6 +47,13 @@ Be clear about the scale — these two clips are the **entire** validation set:
 | Stitched long image | 720 × 5,106 | 720 × 13,558 |
 | Output | 40 messages | 202 lines / ~2,375 characters |
 
+A WeChat **group chat** was added later as an ad-hoc test (44.2 s / 177 frames / 60 real messages
+in range): 59 of 60 messages recovered, all 35 anchor checks passed, 10.2 s total.
+No character-level figure for group chat — the screen shows per-group display names while the
+database exports wxids, so no verbatim ground truth can be built.
+Two grey-background bubbles (RGB 225) could not be resolved; the app flagged them and skipped
+them rather than guessing.
+
 So: **one 27-second WeChat conversation with a 569-character ground truth is the only
 character-level accuracy measurement in this README.** The Xiaohongshu clip has no exported
 ground truth, so it only verifies coverage (line count, scroll distance, anchor health) —
