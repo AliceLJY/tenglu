@@ -44,7 +44,7 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 ## Status
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
-- **M2 (in progress, Level 1):** per-frame selection now uses coarse-only SAD while stitch keeps pixel-level rematching. On-device timing and accuracy are awaiting verification; later levels stay separate. No native modules unless pure JS provably can't reach the <30 s displacement target.
+- **M2 (in progress, Level 3):** Level 1 cut the measured on-device displacement stage from 218.8 s to 158.2 s with byte-identical output. Level 3 now prepares one crop-local 1/4-scale grayscale frame for adjacent searches while stitch keeps full-resolution rematching; its on-device timing and accuracy are awaiting verification. No native modules unless pure JS provably cannot reach the target.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development

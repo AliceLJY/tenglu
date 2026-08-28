@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   fixedFpsTimes,
   ocrSegmentRanges,
+  reconcileFrameShiftTiming,
   uniformTimes,
 } = require("../src/pipeline-utils");
 
@@ -38,4 +39,35 @@ test("13558px OCR ranges end exactly at the long-image boundary", () => {
   assert.equal(ranges.length, 12);
   assert.deepEqual(ranges.at(-1), { top: 13200, height: 358 });
   assert.equal(ranges.at(-1).top + ranges.at(-1).height, 13558);
+});
+
+test("frame-shift timing reconciliation uses all six exclusive details", () => {
+  const result = reconcileFrameShiftTiming(1000, {
+    shiftThumbMs: 100,
+    decodeMs: 200,
+    grayMs: 100,
+    shiftMs: 300,
+    keyframeMs: 100,
+    pauseMs: 50,
+  });
+
+  assert.equal(result.accountedMs, 850);
+  assert.equal(result.unclassifiedMs, 150);
+  assert.equal(result.thresholdMs, 100);
+  assert.equal(result.shouldWarn, true);
+});
+
+test("frame-shift timing reconciliation accepts a difference at the threshold", () => {
+  const result = reconcileFrameShiftTiming(20_000, {
+    shiftThumbMs: 1_000,
+    decodeMs: 4_000,
+    grayMs: 2_000,
+    shiftMs: 10_000,
+    keyframeMs: 1_500,
+    pauseMs: 1_300,
+  });
+
+  assert.equal(result.unclassifiedMs, 200);
+  assert.equal(result.thresholdMs, 200);
+  assert.equal(result.shouldWarn, false);
 });

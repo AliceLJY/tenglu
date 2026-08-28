@@ -2,13 +2,18 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  cropRows,
   detectScrollRegion,
   dedupeLines,
   encodeBMP,
   estimateShift,
   estimateShiftCoarse,
+  estimateShiftCoarsePrepared,
   pickKeyframes,
+  prepareCoarseGray,
+  prepareFrameCoarseGray,
   stitch,
+  toGray,
 } = require("../src/stitcher");
 
 function solidRgba(width, height, value) {
@@ -57,6 +62,20 @@ function grayToRgba(gray) {
     rgba[p + 1] = gray[i];
     rgba[p + 2] = gray[i];
     rgba[p + 3] = 255;
+  }
+  return rgba;
+}
+
+function colorfulRgba(width, height) {
+  const rgba = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = (y * width + x) * 4;
+      rgba[p] = (x * 17 + y * 31) & 255;
+      rgba[p + 1] = (x * 43 + y * 7) & 255;
+      rgba[p + 2] = (x * 5 + y * 53) & 255;
+      rgba[p + 3] = 255;
+    }
   }
   return rgba;
 }
@@ -153,6 +172,132 @@ test("detectScrollRegion reports ok:false when static frames contain no seed", (
     seed: [0, height],
     ok: false,
   });
+});
+
+test("production helper crops before sampling and exactly matches crop-local L1", () => {
+  const width = 67;
+  const fullHeight = 407;
+  const top = 3;
+  const bottom = 406;
+  const viewHeight = bottom - top;
+  const fullRgba = colorfulRgba(width, fullHeight);
+  const regionRgba = cropRows(fullRgba, width, top, bottom);
+  const fullGray = toGray(regionRgba, width, viewHeight);
+  const prepared = prepareFrameCoarseGray(
+    fullRgba,
+    width,
+    fullHeight,
+    top,
+    bottom,
+  );
+  const expected = new Uint8Array(prepared.width * prepared.height);
+
+  for (let y = 0; y < prepared.height; y++) {
+    for (let x = 0; x < prepared.width; x++) {
+      expected[y * prepared.width + x] = fullGray[(y * 4) * width + x * 4];
+    }
+  }
+
+  assert.equal(prepared.width, 16);
+  assert.equal(prepared.height, 100);
+  assert.equal(prepared.scale, 4);
+  assert.deepEqual(prepared.data, expected);
+});
+
+test("prepared coarse search is exactly equivalent to the L1 wrapper", () => {
+  for (const [width, height] of [[64, 400], [65, 401], [67, 403]]) {
+    for (const dy of [-5, -1, 0, 13, 37]) {
+      const oldGray = texturedGray(width, height);
+      const newGray = shiftGray(oldGray, width, height, dy);
+      const oldRgba = grayToRgba(oldGray);
+      const newRgba = grayToRgba(newGray);
+
+      assert.deepEqual(
+        estimateShiftCoarsePrepared(
+          prepareCoarseGray(oldRgba, width, height),
+          prepareCoarseGray(newRgba, width, height),
+        ),
+        estimateShiftCoarse(oldGray, newGray, width, height),
+        `${width}x${height}, dy=${dy}`,
+      );
+    }
+  }
+});
+
+test("prepared coarse search preserves frozen L1 boundary and confidence results", () => {
+  const width = 64;
+  const height = 400;
+  const oldGray = texturedGray(width, height);
+
+  for (const [dy, expected] of [
+    [-60, { dy: -60, conf: 1 }],
+    [40, { dy: 40, conf: 1 }],
+    [13, { dy: 12, conf: 0.9392838541666667 }],
+  ]) {
+    const newGray = shiftGray(oldGray, width, height, dy);
+    assert.deepEqual(
+      estimateShiftCoarsePrepared(
+        prepareCoarseGray(grayToRgba(oldGray), width, height),
+        prepareCoarseGray(grayToRgba(newGray), width, height),
+      ),
+      expected,
+      `dy=${dy}`,
+    );
+  }
+
+  const minimumHeight = 360;
+  const minimumOld = texturedGray(width, minimumHeight);
+  assert.deepEqual(
+    estimateShiftCoarsePrepared(
+      prepareCoarseGray(grayToRgba(minimumOld), width, minimumHeight),
+      prepareCoarseGray(grayToRgba(minimumOld), width, minimumHeight),
+    ),
+    { dy: 0, conf: 1 },
+  );
+});
+
+test("prepared coarse search does not downsample a second time", () => {
+  const width = 17;
+  const height = 100;
+  const oldData = texturedGray(width, height);
+  const newData = shiftGray(oldData, width, height, 3);
+  const oldPrepared = { data: oldData, width, height, scale: 4 };
+  const newPrepared = { data: newData, width, height, scale: 4 };
+
+  assert.equal(
+    estimateShiftCoarsePrepared(oldPrepared, newPrepared).dy,
+    12,
+  );
+});
+
+test("prepared coarse search rejects mismatched or too-short inputs", () => {
+  const valid = {
+    data: new Uint8Array(16 * 100),
+    width: 16,
+    height: 100,
+    scale: 4,
+  };
+
+  assert.throws(
+    () => estimateShiftCoarsePrepared(valid, {
+      data: new Uint8Array(15 * 100),
+      width: 15,
+      height: 100,
+      scale: 4,
+    }),
+    /dimensions must match/,
+  );
+  assert.throws(
+    () => estimateShiftCoarsePrepared(valid, { ...valid, scale: 8 }),
+    /invalid dimensions or scale/,
+  );
+  assert.throws(
+    () => estimateShiftCoarsePrepared(
+      { data: new Uint8Array(16 * 89), width: 16, height: 89, scale: 4 },
+      { data: new Uint8Array(16 * 89), width: 16, height: 89, scale: 4 },
+    ),
+    /too short/,
+  );
 });
 
 test("coarse shift stays within 4px while full shift remains pixel-accurate", () => {

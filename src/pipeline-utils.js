@@ -41,4 +41,41 @@ function ocrSegmentRanges(totalHeight, segmentHeight, overlap) {
   return ranges;
 }
 
-module.exports = { fixedFpsTimes, ocrSegmentRanges, uniformTimes };
+const FRAME_SHIFT_DETAIL_KEYS = [
+  "shiftThumbMs",
+  "decodeMs",
+  "grayMs",
+  "shiftMs",
+  "keyframeMs",
+  "pauseMs",
+];
+
+/** Compare the phase wall time with its six mutually exclusive measurements. */
+function reconcileFrameShiftTiming(frameShiftMs, details) {
+  if (!Number.isFinite(frameShiftMs) || frameShiftMs < 0) {
+    throw new RangeError("frameShiftMs must be a non-negative finite number");
+  }
+  let accountedMs = 0;
+  for (const key of FRAME_SHIFT_DETAIL_KEYS) {
+    const value = details?.[key];
+    if (!Number.isFinite(value) || value < 0) {
+      throw new RangeError(`${key} must be a non-negative finite number`);
+    }
+    accountedMs += value;
+  }
+  const unclassifiedMs = frameShiftMs - accountedMs;
+  const thresholdMs = Math.max(100, frameShiftMs * 0.01);
+  return {
+    accountedMs,
+    shouldWarn: Math.abs(unclassifiedMs) > thresholdMs,
+    thresholdMs,
+    unclassifiedMs,
+  };
+}
+
+module.exports = {
+  fixedFpsTimes,
+  ocrSegmentRanges,
+  reconcileFrameShiftTiming,
+  uniformTimes,
+};

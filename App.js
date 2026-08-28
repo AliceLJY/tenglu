@@ -20,6 +20,12 @@ const TIMING_ROWS = [
   ["预扫", "prescan"],
   ["取帧与位移", "frameShift"],
   ["抽帧累计（明细）", "thumbnail"],
+  ["位移阶段抽帧（明细）", "shiftThumbMs"],
+  ["首次解码（明细）", "decodeMs"],
+  ["小灰图（明细）", "grayMs"],
+  ["逐帧粗搜（明细）", "shiftMs"],
+  ["关键帧准备（明细）", "keyframeMs"],
+  ["UI 让出（明细）", "pauseMs"],
   ["拼接", "stitch"],
   ["BMP 编码", "bmp"],
   ["OCR", "ocr"],
@@ -140,6 +146,11 @@ export default function App() {
                   <Text>{result.timings[key]}</Text>
                 </View>
               ))}
+              {result.timingWarning ? (
+                <Text style={styles.timingWarning}>
+                  {result.timingWarning}
+                </Text>
+              ) : null}
             </View>
 
             <Text style={styles.stats}>
@@ -237,6 +248,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 10,
     paddingVertical: 5,
+  },
+  timingWarning: {
+    borderTopColor: "#b00020",
+    borderTopWidth: 1,
+    color: "#b00020",
+    padding: 10,
   },
   stats: {
     color: "#444444",

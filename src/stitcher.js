@@ -107,10 +107,62 @@ function detectScrollRegion(grays, w, h, opts = {}) {
 const DS = 4, OFF = 60, BAND = 300, REFINE = 24;
 
 function downsample(g, w, h) {
-  const dw = (w / DS) | 0, dh = (h / DS) | 0, out = new Uint8Array(dw * dh);
-  for (let y = 0; y < dh; y++)
-    for (let x = 0; x < dw; x++) out[y * dw + x] = g[y * DS * w + x * DS];
-  return { d: out, dw, dh };
+  const width = (w / DS) | 0;
+  const height = (h / DS) | 0;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) data[y * width + x] = g[y * DS * w + x * DS];
+  return { data, width, height, scale: DS };
+}
+
+/**
+ * L3：把已经裁到滚动区的 RGBA 一次性变成 DS=4 小灰图。
+ *
+ * 必须先 cropRows、再调用本函数。不能从整帧 y=0 开始降采样后再裁：
+ * 微信 top=154、小红书 top=182，都不是 4 的倍数；先降再裁会让采样行
+ * 相对 L1 的「top + 4k」整体错开 2px，破坏逐字节等价。
+ */
+function prepareCoarseGray(rgba, w, h) {
+  if (!(rgba instanceof Uint8Array)) {
+    throw new TypeError("rgba must be a Uint8Array");
+  }
+  if (!Number.isInteger(w) || w <= 0 || !Number.isInteger(h) || h <= 0) {
+    throw new RangeError("width and height must be positive integers");
+  }
+  if (rgba.length !== w * h * 4) {
+    throw new RangeError("rgba length does not match its dimensions");
+  }
+
+  const width = (w / DS) | 0;
+  const height = (h / DS) | 0;
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const p = (y * DS * w + x * DS) * 4;
+      data[y * width + x] = (
+        rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29
+      ) >> 8;
+    }
+  return { data, width, height, scale: DS };
+}
+
+/**
+ * L3 生产入口：从完整帧先零复制裁出滚动区，再生成小灰图。
+ * 把顺序封在一个函数里，避免调用方误写成从 y=0 降采样后再裁。
+ */
+function prepareFrameCoarseGray(rgba, w, h, top, bottom) {
+  if (!(rgba instanceof Uint8Array)) {
+    throw new TypeError("rgba must be a Uint8Array");
+  }
+  if (!Number.isInteger(w) || w <= 0 || !Number.isInteger(h) || h <= 0 ||
+      rgba.length !== w * h * 4) {
+    throw new RangeError("full-frame rgba does not match its dimensions");
+  }
+  if (!Number.isInteger(top) || !Number.isInteger(bottom) ||
+      top < 0 || bottom > h || top >= bottom) {
+    throw new RangeError("invalid scroll-region rows");
+  }
+  return prepareCoarseGray(cropRows(rgba, w, top, bottom), w, bottom - top);
 }
 
 function sad(a, aw, ay, b, bw, by, tw, th, stride = 1) {
@@ -122,18 +174,47 @@ function sad(a, aw, ay, b, bw, by, tw, th, stride = 1) {
   return s;
 }
 
-function searchCoarse(oldG, newG, w, h) {
-  const A = downsample(oldG, w, h), B = downsample(newG, w, h);
+function assertPreparedImage(image, name) {
+  if (!image || !(image.data instanceof Uint8Array)) {
+    throw new TypeError(`${name} prepared gray must contain Uint8Array data`);
+  }
+  if (!Number.isInteger(image.width) || image.width <= 0 ||
+      !Number.isInteger(image.height) || image.height <= 0 ||
+      image.scale !== DS || image.data.length !== image.width * image.height) {
+    throw new RangeError(`${name} prepared gray has invalid dimensions or scale`);
+  }
+}
+
+function assertPreparedPair(A, B) {
+  assertPreparedImage(A, "old");
+  assertPreparedImage(B, "new");
+  if (A.width !== B.width || A.height !== B.height) {
+    throw new RangeError("prepared gray dimensions must match");
+  }
+}
+
+function searchCoarsePrepared(A, B) {
+  assertPreparedPair(A, B);
   const dOFF = (OFF / DS) | 0, dBAND = (BAND / DS) | 0;
+  if (A.height < dBAND || B.height < dOFF + dBAND) {
+    throw new RangeError("prepared gray is too short for the coarse-search template");
+  }
   let best = Infinity, bestY = 0;
-  for (let y = 0; y + dBAND <= A.dh; y++) {
-    const s = sad(A.d, A.dw, y, B.d, B.dw, dOFF, A.dw, dBAND);
+  for (let y = 0; y + dBAND <= A.height; y++) {
+    const s = sad(A.data, A.width, y, B.data, B.width, dOFF, A.width, dBAND);
     if (s < best) { best = s; bestY = y; }
   }
   return {
     coarse: bestY * DS,
-    conf: 1 - Math.min(1, best / (A.dw * dBAND * 64)),
+    conf: 1 - Math.min(1, best / (A.width * dBAND * 64)),
   };
+}
+
+function searchCoarse(oldG, newG, w, h) {
+  return searchCoarsePrepared(
+    downsample(oldG, w, h),
+    downsample(newG, w, h),
+  );
 }
 
 /**
@@ -144,6 +225,15 @@ function searchCoarse(oldG, newG, w, h) {
  */
 function estimateShiftCoarse(oldG, newG, w, h) {
   const { coarse, conf } = searchCoarse(oldG, newG, w, h);
+  return { dy: coarse - OFF, conf };
+}
+
+/**
+ * L3 逐帧入口：直接在 prepareCoarseGray() 的小灰图上粗搜。
+ * 不再调用 downsample；返回的 dy 仍是全分辨率像素，供 pickKeyframes 使用。
+ */
+function estimateShiftCoarsePrepared(oldPrepared, newPrepared) {
+  const { coarse, conf } = searchCoarsePrepared(oldPrepared, newPrepared);
   return { dy: coarse - OFF, conf };
 }
 
@@ -332,7 +422,21 @@ function dedupeLines(lines, opts = {}) {
   return out;
 }
 
-module.exports = { PRESETS, encodeBMP, dedupeLines, toGray, detectScrollRegion, estimateShiftCoarse, estimateShift, pickKeyframes, stitch, cropRows };
+module.exports = {
+  PRESETS,
+  cropRows,
+  dedupeLines,
+  detectScrollRegion,
+  encodeBMP,
+  estimateShift,
+  estimateShiftCoarse,
+  estimateShiftCoarsePrepared,
+  pickKeyframes,
+  prepareCoarseGray,
+  prepareFrameCoarseGray,
+  stitch,
+  toGray,
+};
 
 /**
  * 边抽边验取帧 —— ⚠️ 【已废弃，不要用，也不要在 M2 里复活它】

@@ -7,11 +7,11 @@ import TextRecognition, {
 const jpeg = require("jpeg-js");
 const {
   PRESETS,
-  cropRows,
   detectScrollRegion,
   encodeBMP,
-  estimateShiftCoarse,
+  estimateShiftCoarsePrepared,
   pickKeyframes,
+  prepareFrameCoarseGray,
   stitch,
   toGray,
 } = require("./stitcher");
@@ -26,6 +26,7 @@ const {
 const {
   fixedFpsTimes,
   ocrSegmentRanges,
+  reconcileFrameShiftTiming,
   uniformTimes,
 } = require("./pipeline-utils");
 
@@ -142,7 +143,7 @@ async function recognizeLongImage(out, state, onProgress) {
 }
 
 /**
- * Run the complete on-device M1 pipeline for one selected ImagePicker asset.
+ * Run the complete on-device pipeline for one selected ImagePicker asset.
  * The caller owns UI state; this function owns every temporary frame/BMP file.
  */
 export async function processRecording(asset, app = "wechat", onProgress) {
@@ -161,10 +162,24 @@ export async function processRecording(asset, app = "wechat", onProgress) {
     prescan: 0,
     frameShift: 0,
     thumbnail: 0,
+    shiftThumbMs: 0,
+    decodeMs: 0,
+    grayMs: 0,
+    shiftMs: 0,
+    keyframeMs: 0,
+    pauseMs: 0,
     stitch: 0,
     bmp: 0,
     ocr: 0,
     total: 0,
+  };
+  const frameShiftDetails = {
+    shiftThumbMs: 0,
+    decodeMs: 0,
+    grayMs: 0,
+    shiftMs: 0,
+    keyframeMs: 0,
+    pauseMs: 0,
   };
   const totalStarted = now();
 
@@ -206,27 +221,55 @@ export async function processRecording(asset, app = "wechat", onProgress) {
     const frameTimes = fixedFpsTimes(durationMs, FPS);
     const frameUris = [];
     const shifts = [];
-    let previousGray = null;
+    const shiftThumbnailStarted = state.thumbnailMs;
+    let previousCoarseGray = null;
 
     for (let index = 0; index < frameTimes.length; index++) {
       report(onProgress, `取帧与位移 ${index + 1}/${frameTimes.length}`);
       const thumb = await grabFrame(asset.uri, frameTimes[index], state);
       frameUris.push(thumb.uri);
+
+      let detailStarted = now();
       const image = await decodeJpeg(thumb.uri);
+      frameShiftDetails.decodeMs += now() - detailStarted;
       assertSameFrameSize(image, width, height);
-      const regionRgba = cropRows(image.data, width, region.top, region.bottom);
-      const gray = toGray(regionRgba, width, viewHeight);
-      if (previousGray) shifts.push(estimateShiftCoarse(previousGray, gray, width, viewHeight));
-      previousGray = gray;
-      if ((index + 1) % 4 === 0) await pauseForUi();
+
+      detailStarted = now();
+      const coarseGray = prepareFrameCoarseGray(
+        image.data,
+        width,
+        height,
+        region.top,
+        region.bottom,
+      );
+      frameShiftDetails.grayMs += now() - detailStarted;
+
+      if (previousCoarseGray) {
+        detailStarted = now();
+        shifts.push(
+          estimateShiftCoarsePrepared(previousCoarseGray, coarseGray),
+        );
+        frameShiftDetails.shiftMs += now() - detailStarted;
+      }
+      previousCoarseGray = coarseGray;
+
+      if ((index + 1) % 4 === 0) {
+        detailStarted = now();
+        await pauseForUi();
+        frameShiftDetails.pauseMs += now() - detailStarted;
+      }
     }
 
+    let detailStarted = now();
     const keyframes = pickKeyframes(shifts, viewHeight);
-    previousGray = null;
     const regions = new Array(frameUris.length);
+    frameShiftDetails.keyframeMs += now() - detailStarted;
+    previousCoarseGray = null;
     for (let index = 0; index < keyframes.keep.length; index++) {
       report(onProgress, `准备关键帧 ${index + 1}/${keyframes.keep.length}`);
       const frameIndex = keyframes.keep[index];
+
+      detailStarted = now();
       const image = await decodeJpeg(frameUris[frameIndex]);
       assertSameFrameSize(image, width, height);
       regions[frameIndex] = copyRgbaRows(
@@ -235,10 +278,28 @@ export async function processRecording(asset, app = "wechat", onProgress) {
         region.top,
         viewHeight,
       );
+      frameShiftDetails.keyframeMs += now() - detailStarted;
+
+      detailStarted = now();
       await pauseForUi();
+      frameShiftDetails.pauseMs += now() - detailStarted;
     }
-    timings.frameShift = elapsed(phaseStarted);
+    const frameShiftRaw = now() - phaseStarted;
+    frameShiftDetails.shiftThumbMs = state.thumbnailMs - shiftThumbnailStarted;
+    timings.frameShift = Math.round(frameShiftRaw);
     timings.thumbnail = Math.round(state.thumbnailMs);
+    for (const [key, value] of Object.entries(frameShiftDetails)) {
+      timings[key] = Math.round(value);
+    }
+    const timingReconciliation = reconcileFrameShiftTiming(
+      frameShiftRaw,
+      frameShiftDetails,
+    );
+    const timingWarning = timingReconciliation.shouldWarn
+      ? `位移阶段对账差额 ${Math.round(timingReconciliation.unclassifiedMs)}ms，` +
+        `超过 ${Math.round(timingReconciliation.thresholdMs)}ms 告警阈值；` +
+        "可能存在尚未归因的开销或计时范围重叠。"
+      : "";
 
     // 3) The verified stitcher receives only the selected full-resolution regions.
     report(onProgress, "拼接长图");
@@ -289,6 +350,7 @@ export async function processRecording(asset, app = "wechat", onProgress) {
 
     return {
       markdown,
+      timingWarning,
       warnings,
       timings,
       stats: {
