@@ -25,10 +25,10 @@ test("uniform pre-scan includes both ends and the requested count", () => {
   assert.deepEqual(uniformTimes(1001, 1), [0]);
 });
 
-test("L4.1 uses low-quality shift frames and full-quality source frames", () => {
+test("L4 analysis frames stay low-quality while source frames stay full-quality", () => {
   assert.deepEqual(thumbnailOptions(250, "prescan"), {
     time: 250,
-    quality: 1,
+    quality: 0.4,
   });
   assert.deepEqual(thumbnailOptions(500, "shift"), {
     time: 500,

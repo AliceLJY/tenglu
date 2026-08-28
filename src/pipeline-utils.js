@@ -28,7 +28,7 @@ function fixedFpsTimes(durationMs, fps) {
 }
 
 const THUMBNAIL_QUALITY = Object.freeze({
-  prescan: 1,
+  prescan: 0.4,
   shift: 0.4,
   keyframe: 1,
 });
