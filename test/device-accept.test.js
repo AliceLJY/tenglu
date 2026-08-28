@@ -7,7 +7,7 @@ const { spawnSync } = require("node:child_process");
 
 const SCRIPT = path.join(process.cwd(), "verify", "device-accept.mjs");
 const TIMINGS = [
-  "选定帧抽取: 100 ms",
+  "精确帧抽取: 100 ms",
   "逐帧 ML Kit OCR: 200 ms",
   "UI 让出: 1 ms",
   "固定 UI / 锚点 / 去重: 2 ms",
@@ -35,12 +35,33 @@ function report(mode, markdown = "hello") {
       screenAwakeRequested: true,
       anchorPairCount: 15,
       anchorPassedCount: 15,
+      anchorDetails: Array.from({ length: 15 }, (_, index) => ({
+        pair: `f_${index}→f_${index + 1}`,
+        fuzzyCandidateVotes: 0,
+        fuzzyCandidateTotal: 0,
+        fuzzyCandidateVoteRatio: null,
+      })),
+      stride: 3,
+      maxAnchorGapMs: 750,
+      sourceFrameCount: 108,
+      frameCount: 36,
+      ocrCaptureEnabled: true,
+      ocrCapturedFrameCount: 108,
+      ocrExportFrameFiles: 108,
+      ocrExportBytes: 123456,
+      dedupeCandidateGroups: 50,
+      dedupeMajorityChosen: 20,
+      dedupeChangedSelection: 4,
       sampleRegionCount: 13,
       sampleUnresolvedCount: 0,
       decodedPixels: 200000,
       frameExtractionMethod: "MediaMetadataRetriever.OPTION_CLOSEST",
       timingDeltaMs: 2,
       timingThresholdMs: 100,
+      cleanupAttemptCount: 1,
+      remainingTempFileCount: 0,
+      nativeStaleTempFileCount: 0,
+      nativeStaleTempFileDeletedCount: 0,
     }, null, 2),
     "",
     "还原告警:",
@@ -91,6 +112,64 @@ test("device acceptance rejects a bare Markdown paste by default", () => {
 
   assert.equal(run.status, 1);
   assert.match(run.stderr, /不是完整验收报告/);
+});
+
+test("device acceptance rejects failed reports unless diagnostic parsing is explicit", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const failedReport = tempFile(
+    dir,
+    "failed.txt",
+    report("微信").replace("状态: ok", "状态: failed"),
+  );
+  const rejected = spawnSync(process.execPath, [
+    SCRIPT,
+    failedReport,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+  ], { encoding: "utf8" });
+  const diagnostic = spawnSync(process.execPath, [
+    SCRIPT,
+    failedReport,
+    "--extract-only",
+    "--expect-mode",
+    "wechat",
+    "--allow-failed",
+  ], { encoding: "utf8" });
+
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /状态为 failed/);
+  assert.equal(diagnostic.status, 0, diagnostic.stderr);
+  assert.match(diagnostic.stdout, /report_status: failed/);
+});
+
+test("device acceptance rejects warning reports unless diagnostic parsing is explicit", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tenglu-accept-"));
+  const warningReport = tempFile(
+    dir,
+    "warning.txt",
+    report("通用").replace("状态: ok", "状态: warning"),
+  );
+  const rejected = spawnSync(process.execPath, [
+    SCRIPT,
+    warningReport,
+    "--extract-only",
+    "--expect-mode",
+    "generic",
+  ], { encoding: "utf8" });
+  const diagnostic = spawnSync(process.execPath, [
+    SCRIPT,
+    warningReport,
+    "--extract-only",
+    "--expect-mode",
+    "generic",
+    "--allow-warning",
+  ], { encoding: "utf8" });
+
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /状态为 warning/);
+  assert.equal(diagnostic.status, 0, diagnostic.stderr);
+  assert.match(diagnostic.stdout, /report_status: warning/);
 });
 
 test("device acceptance can extract XHS without inventing a byte baseline", () => {

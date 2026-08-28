@@ -18,7 +18,15 @@ export type ExtractedFrame = {
 export type ExtractedFrameBatch = {
   frames: ExtractedFrame[];
   method: "MediaMetadataRetriever.OPTION_CLOSEST";
+  staleFileCount: number;
+  staleDeletedCount: number;
   elapsedMs: number;
+};
+
+export type FrameCleanupResult = {
+  foundCount: number;
+  deletedCount: number;
+  remainingCount: number;
 };
 
 export type RegionSample = {

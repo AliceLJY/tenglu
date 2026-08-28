@@ -7,11 +7,14 @@ const {
   clusterVote,
   collectFrameLines,
   dedupePlacedLines,
+  dedupePlacedLineGroups,
+  estimateShift,
   finalizeWechatMessages,
   findFixedBands,
   makeRegionRequests,
   prepareWechatMessages,
   renderPlain,
+  textSimilarity,
 } = require("../src/anchor-utils");
 
 function line(text, x, y, w = 100, h = 30, frameIndex = 0, gy = y) {
@@ -23,15 +26,25 @@ test("ML Kit collector keeps local x/y/w/h and the compact frame index", () => {
     blocks: [{
       frame: { left: 1, top: 2, width: 3, height: 4 },
       lines: [
-        { text: " 第一行 ", frame: { left: 10, top: 20, width: 30, height: 40 } },
+        {
+          text: " 第一行 ",
+          confidence: 0.875,
+          frame: { left: 10, top: 20, width: 30, height: 40 },
+        },
         { text: "回退 block frame" },
       ],
     }],
   }, 2);
 
   assert.deepEqual(lines, [
-    { text: "第一行", x: 10, y: 20, w: 30, h: 40, frameIndex: 2 },
-    { text: "回退 block frame", x: 1, y: 2, w: 3, h: 4, frameIndex: 2 },
+    {
+      text: "第一行", x: 10, y: 20, w: 30, h: 40,
+      conf: 0.875, frameIndex: 2,
+    },
+    {
+      text: "回退 block frame", x: 1, y: 2, w: 3, h: 4,
+      conf: null, frameIndex: 2,
+    },
   ]);
 });
 
@@ -52,18 +65,107 @@ test("shift voting chains adjacent differences within 3px and uses the median", 
   });
 });
 
+test("fuzzy anchors require mutual best text and the exact displacement cluster", () => {
+  const fixed = new Set();
+  const previous = [
+    line("完全相同甲乙", 10, 500),
+    line("完全相同丙丁", 10, 650),
+    line("完全相同戊己", 10, 800),
+    line("这是稍微抖动的一条足够长文本", 10, 950),
+    line("昨天18:12四川回复", 10, 1100),
+  ];
+  const current = [
+    line("完全相同甲乙", 10, 400, 100, 30, 1),
+    line("完全相同丙丁", 10, 550, 100, 30, 1),
+    line("完全相同戊己", 10, 700, 100, 30, 1),
+    line("这是稍微抖动的二条足够长文本", 10, 850, 100, 30, 1),
+    line("昨天18:15四川回复", 10, 821, 100, 30, 1),
+  ];
+  const result = estimateShift(previous, current, fixed);
+
+  assert.equal(textSimilarity("昨天18:12四川回复", "昨天18:15四川回复") >= 0.9, true);
+  assert.equal(result.shift, 100);
+  assert.equal(result.exactTotal, 3);
+  assert.equal(result.fuzzyCandidates, 2);
+  assert.equal(result.fuzzyAccepted, 1);
+  assert.equal(result.fuzzyRejected, 1);
+  assert.equal(result.total, 4);
+  assert.equal(result.votes, 4);
+});
+
+test("fuzzy-only shift needs three agreeing candidates and rejects a two-line guess", () => {
+  const fixed = new Set();
+  const previous = [
+    line("苹果这条识别文本足够长甲", 10, 500),
+    line("香蕉这条识别文本足够长乙", 10, 650),
+    line("葡萄这条识别文本足够长丙", 10, 800),
+  ];
+  const current = previous.map((item, index) => ({
+    ...item,
+    text: item.text.replace("识", "辨"),
+    y: item.y - 120,
+    frameIndex: 1,
+  }));
+  const rescued = estimateShift(previous, current, fixed);
+  const insufficient = estimateShift(previous.slice(0, 2), current.slice(0, 2), fixed);
+  const exactOnly = estimateShift(previous, current, fixed, { fuzzy: false });
+
+  assert.equal(rescued.shift, 120);
+  assert.equal(rescued.fuzzyRescue, true);
+  assert.equal(rescued.total, 3);
+  assert.equal(insufficient.shift, 0);
+  assert.equal(insufficient.total, 0);
+  assert.equal(insufficient.fuzzyAccepted, 0);
+  assert.equal(exactOnly.total, 0);
+});
+
+test("fuzzy-only rescue reports its raw candidate ratio instead of a filtered 100 percent", () => {
+  const fixed = new Set();
+  const previous = [
+    line("苹果这条识别文本足够长甲", 10, 500),
+    line("香蕉这条识别文本足够长乙", 10, 650),
+    line("葡萄这条识别文本足够长丙", 10, 800),
+    line("西瓜这条识别文本足够长丁", 10, 950),
+  ];
+  const current = previous.map((item, index) => ({
+    ...item,
+    text: item.text.replace("识", "辨"),
+    y: item.y - (index === 3 ? 500 : 120),
+    frameIndex: 1,
+  }));
+
+  const rescued = estimateShift(previous, current, fixed);
+
+  assert.equal(rescued.shift, 120);
+  assert.equal(rescued.fuzzyRescue, true);
+  assert.equal(rescued.votes, 3);
+  assert.equal(rescued.total, 4);
+  assert.equal(rescued.fuzzyCandidateVotes, 3);
+  assert.equal(rescued.fuzzyCandidateTotal, 4);
+});
+
 test("anchor self-check distinguishes zero, sparse, and dispersed votes", () => {
   const warnings = checkAnchors([
     { from: "a", to: "b", total: 0, votes: 0 },
     { from: "b", to: "c", total: 2, votes: 2 },
     { from: "c", to: "d", total: 5, votes: 1 },
     { from: "d", to: "e", total: 5, votes: 2 },
+    {
+      from: "e",
+      to: "f",
+      total: 0,
+      votes: 0,
+      fuzzyCandidateVotes: 2,
+      fuzzyCandidateTotal: 2,
+    },
   ]);
 
-  assert.equal(warnings.length, 3);
+  assert.equal(warnings.length, 4);
   assert.match(warnings[0].reasons[0], /锚点 0/);
   assert.match(warnings[1].reasons[0], /锚点仅 2/);
   assert.match(warnings[2].reasons[0], /20%/);
+  assert.match(warnings[3].reasons[0], /模糊候选 2 个/);
+  assert.doesNotMatch(warnings[3].reasons[0], /明确无重叠/);
 });
 
 test("unreliable shift paths prevent cross-frame box dedupe", () => {
@@ -80,6 +182,127 @@ test("unreliable shift paths prevent cross-frame box dedupe", () => {
 
   assert.deepEqual(reliable.map(item => item.text), ["是的"]);
   assert.deepEqual(unreliable.map(item => item.text), ["是", "是的"]);
+});
+
+test("three-frame text consensus can reject a longer insertion without filtering short text", () => {
+  const shifts = [
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+  ];
+  const noisy = [
+    line("连续找我两个", 100, 100, 160, 24, 0, 300),
+    line("连续找我两个", 100, 80, 160, 24, 1, 300),
+    line("连续找我两个", 100, 60, 160, 24, 2, 300),
+    line("连续找我两个的", 100, 40, 170, 24, 3, 300),
+  ];
+  const consensus = dedupePlacedLineGroups(noisy, shifts);
+  const longer = dedupePlacedLineGroups(noisy, shifts, {
+    majorityConsensus: false,
+  });
+  const short = dedupePlacedLines([
+    line("牛", 100, 100, 30, 24, 0, 500),
+    line("牛", 100, 80, 30, 24, 1, 500),
+    line("牛", 100, 60, 30, 24, 2, 500),
+    line("牛", 100, 40, 30, 24, 3, 500),
+  ], shifts);
+
+  assert.deepEqual(consensus.lines.map(item => item.text), ["连续找我两个"]);
+  assert.deepEqual(longer.lines.map(item => item.text), ["连续找我两个的"]);
+  assert.equal(consensus.stats.majorityChosen, 1);
+  assert.equal(consensus.stats.changedSelection, 1);
+  assert.deepEqual(short.map(item => item.text), ["牛"]);
+});
+
+test("text consensus cannot replace a longer candidate with an unrelated majority", () => {
+  const shifts = [
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+  ];
+  const lines = [
+    line("展开127条回复", 100, 100, 180, 24, 0, 300),
+    line("喵酱爱喝冰雪碧", 100, 80, 180, 24, 1, 300),
+    line("喵酱爱喝冰雪碧", 100, 60, 180, 24, 2, 300),
+    line("喵酱爱喝冰雪碧", 100, 40, 180, 24, 3, 300),
+  ];
+
+  const result = dedupePlacedLineGroups(lines, shifts);
+
+  assert.deepEqual(result.lines.map(item => item.text), ["展开127条回复"]);
+  assert.equal(result.stats.majorityChosen, 0);
+  assert.equal(result.stats.majorityRejectedUnrelated, 1);
+  assert.equal(result.details[0].variantSimilarity, 0);
+});
+
+test("text consensus still replaces a one-character insertion in the same line", () => {
+  const shifts = [
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+  ];
+  const lines = [
+    line("张继科也是个渣子", 100, 100, 180, 24, 0, 300),
+    line("张继科也是个渣子", 100, 80, 180, 24, 1, 300),
+    line("张继科也是个渣子", 100, 60, 180, 24, 2, 300),
+    line("张继科料也是个渣子", 100, 40, 190, 24, 3, 300),
+  ];
+
+  const result = dedupePlacedLineGroups(lines, shifts);
+
+  assert.deepEqual(result.lines.map(item => item.text), ["张继科也是个渣子"]);
+  assert.equal(result.stats.majorityChosen, 1);
+  assert.ok(result.details[0].variantSimilarity > 0.8);
+  assert.equal(result.details[0].variantEditDistance, 1);
+});
+
+test("one-character messages are not treated as a text family by edit distance", () => {
+  const shifts = [
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+  ];
+  const lines = [
+    line("牛", 100, 100, 30, 24, 0, 300),
+    line("羊", 100, 80, 30, 24, 1, 300),
+    line("羊", 100, 60, 30, 24, 2, 300),
+    line("羊", 100, 40, 30, 24, 3, 300),
+  ];
+
+  const result = dedupePlacedLineGroups(lines, shifts);
+
+  assert.deepEqual(result.lines.map(item => item.text), ["牛"]);
+  assert.equal(result.stats.majorityRejectedUnrelated, 1);
+});
+
+test("two of three observations are not enough to replace longer-wins", () => {
+  const result = dedupePlacedLineGroups([
+    line("是", 100, 100, 40, 20, 0, 100),
+    line("是", 100, 80, 40, 20, 1, 100),
+    line("是的", 100, 60, 50, 20, 2, 100),
+  ], [
+    { total: 3, votes: 3 },
+    { total: 3, votes: 3 },
+  ]);
+
+  assert.deepEqual(result.lines.map(item => item.text), ["是的"]);
+  assert.equal(result.stats.majorityChosen, 0);
+});
+
+test("same-frame split fragments count as one composed consensus observation", () => {
+  const shifts = Array.from({ length: 3 }, () => ({ total: 3, votes: 3 }));
+  const result = dedupePlacedLineGroups([
+    line("完整回复文本", 100, 100, 160, 20, 0, 300),
+    line("完整回复", 100, 80, 80, 20, 1, 300),
+    line("文本", 180, 80, 80, 20, 1, 300),
+    line("完整回复文本", 100, 60, 160, 20, 2, 300),
+    line("完整回复文本", 100, 40, 160, 20, 3, 300),
+  ], shifts);
+
+  assert.deepEqual(result.lines.map(item => item.text), ["完整回复文本"]);
+  assert.equal(result.stats.frameComposedClusters, 1);
+  assert.equal(result.stats.frameObservationCount, 4);
+  assert.equal(result.stats.majorityChosen, 1);
 });
 
 test("full analysis keeps compact frame indexes across a reliable shift", () => {

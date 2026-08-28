@@ -10,7 +10,7 @@ function usage() {
     "用法:\n" +
     "  node device-accept.mjs <基线.md> <M3完整报告> [--expect-mode wechat|generic] [--out M3.md]\n" +
     "  node device-accept.mjs <M3完整报告> --extract-only [--expect-mode wechat|generic] [--out M3.md]\n" +
-    "  裸 Markdown 仅供调试，必须显式加 --allow-markdown。",
+    "  裸 Markdown、warning/failed 报告仅供调试，须显式加对应 --allow-* 参数。",
   );
   process.exit(1);
 }
@@ -37,7 +37,7 @@ function extractMarkdown(buffer, allowMarkdown) {
   };
 }
 
-function validateReport(text, expectedMode) {
+function validateReport(text, expectedMode, allowWarning, allowFailed) {
   const field = name => text.match(new RegExp(`^${name}: (.+)$`, "m"))?.[1];
   const path = field("路径");
   const requestedPath = field("请求路径");
@@ -48,6 +48,12 @@ function validateReport(text, expectedMode) {
   }
   if (!new Set(["ok", "warning", "failed"]).has(status)) {
     throw new Error("报告缺少有效状态");
+  }
+  if (status === "failed" && !allowFailed) {
+    throw new Error("报告状态为 failed；验收默认拒绝，诊断解析须显式加 --allow-failed");
+  }
+  if (status === "warning" && !allowWarning) {
+    throw new Error("报告状态为 warning；验收默认拒绝，诊断解析须显式加 --allow-warning");
   }
   const expectedLabel = expectedMode === "wechat"
     ? "微信"
@@ -60,7 +66,7 @@ function validateReport(text, expectedMode) {
   }
 
   const timingLabels = [
-    "选定帧抽取",
+    "精确帧抽取",
     "逐帧 ML Kit OCR",
     "UI 让出",
     "固定 UI / 锚点 / 去重",
@@ -93,14 +99,56 @@ function validateReport(text, expectedMode) {
     for (const key of [
       "anchorPairCount",
       "anchorPassedCount",
+      "anchorDetails",
+      "stride",
+      "maxAnchorGapMs",
+      "sourceFrameCount",
+      "frameCount",
+      "ocrCaptureEnabled",
+      "ocrCapturedFrameCount",
+      "ocrExportFrameFiles",
+      "ocrExportBytes",
+      "dedupeCandidateGroups",
+      "dedupeMajorityChosen",
+      "dedupeChangedSelection",
       "sampleRegionCount",
       "sampleUnresolvedCount",
       "decodedPixels",
       "frameExtractionMethod",
       "timingDeltaMs",
       "timingThresholdMs",
+      "cleanupAttemptCount",
+      "remainingTempFileCount",
+      "nativeStaleTempFileCount",
+      "nativeStaleTempFileDeletedCount",
     ]) {
       if (!(key in stats)) throw new Error(`报告统计缺少 ${key}`);
+    }
+    if (stats.ocrCaptureEnabled !== true ||
+        stats.ocrCapturedFrameCount !== stats.sourceFrameCount ||
+        stats.ocrExportFrameFiles !== stats.sourceFrameCount) {
+      throw new Error("报告未证明完整 4fps OCR 已采集并导出");
+    }
+    if (stats.stride !== 3 || stats.maxAnchorGapMs !== 750) {
+      throw new Error("报告不是本批 stride=3 / 最大间隔 750ms 候选");
+    }
+    if (!Array.isArray(stats.anchorDetails) ||
+        stats.anchorDetails.length !== stats.anchorPairCount) {
+      throw new Error("报告的逐对锚点统计不完整");
+    }
+    if (!stats.anchorDetails.every(detail =>
+      "fuzzyCandidateVotes" in detail &&
+      "fuzzyCandidateTotal" in detail &&
+      "fuzzyCandidateVoteRatio" in detail
+    )) {
+      throw new Error("报告缺少模糊救援的原始候选簇占比");
+    }
+    if (stats.remainingTempFileCount !== 0) {
+      throw new Error(`报告显示仍残留 ${stats.remainingTempFileCount} 个临时 JPEG`);
+    }
+    if (stats.nativeStaleTempFileCount !==
+        stats.nativeStaleTempFileDeletedCount) {
+      throw new Error("报告显示流程启动前的旧临时 JPEG 未全部清理");
     }
   }
   const totalMatch = text.match(/^总耗时: (\d+) ms$/m);
@@ -131,6 +179,8 @@ function characterCount(buffer) {
 
 const extractOnly = process.argv.includes("--extract-only");
 const allowMarkdown = process.argv.includes("--allow-markdown");
+const allowWarning = process.argv.includes("--allow-warning");
+const allowFailed = process.argv.includes("--allow-failed");
 const baselinePath = extractOnly ? null : process.argv[2];
 const candidatePath = extractOnly ? process.argv[2] : process.argv[3];
 if (!candidatePath || candidatePath.startsWith("--") ||
@@ -140,7 +190,12 @@ try {
   const candidateSource = fs.readFileSync(candidatePath);
   const candidate = extractMarkdown(candidateSource, allowMarkdown);
   const report = candidate.reportText
-    ? validateReport(candidate.reportText, argument("--expect-mode"))
+    ? validateReport(
+        candidate.reportText,
+        argument("--expect-mode"),
+        allowWarning,
+        allowFailed,
+      )
     : null;
   const outputPath = argument("--out");
   if (outputPath) fs.writeFileSync(outputPath, candidate.buffer);
@@ -157,8 +212,13 @@ try {
       console.log(`sample_regions: ${report.stats.sampleRegionCount}`);
       console.log(`sample_unresolved: ${report.stats.sampleUnresolvedCount}`);
       console.log(`decoded_pixels: ${report.stats.decodedPixels}`);
+      console.log(`ocr_export_frames: ${report.stats.ocrExportFrameFiles}`);
+      console.log(`ocr_export_bytes: ${report.stats.ocrExportBytes}`);
+      console.log(`dedupe_consensus_changed: ${report.stats.dedupeChangedSelection}`);
       console.log(`timing_delta_ms: ${report.stats.timingDeltaMs}`);
       console.log(`timing_threshold_ms: ${report.stats.timingThresholdMs}`);
+      console.log(`remaining_temp_files: ${report.stats.remainingTempFileCount}`);
+      console.log(`stale_temp_files_removed: ${report.stats.nativeStaleTempFileDeletedCount}`);
     }
   }
   console.log(`candidate_bytes: ${candidate.buffer.length}`);

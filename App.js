@@ -11,6 +11,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,6 +19,7 @@ import {
 
 import { processRecording } from "./src/pipeline";
 import { processAnchorRecording } from "./src/anchor-pipeline";
+import { exportOcrCache } from "./src/ocr-cache-export";
 
 const STITCH_TIMING_ROWS = [
   ["预扫", "prescan"],
@@ -36,7 +38,7 @@ const STITCH_TIMING_ROWS = [
 ];
 
 const ANCHOR_TIMING_ROWS = [
-  ["选定帧抽取", "frameExtract"],
+  ["精确帧抽取", "frameExtract"],
   ["逐帧 ML Kit OCR", "frameOcr"],
   ["UI 让出", "uiPause"],
   ["固定 UI / 锚点 / 去重", "anchorLayout"],
@@ -108,13 +110,21 @@ function ModeButton({ active, label, onPress }) {
 export default function App() {
   const [mode, setMode] = useState("wechat");
   const [engine, setEngine] = useState("stitch");
+  const [captureOcrCache, setCaptureOcrCache] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState("等待选择录屏");
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const ocrExportComplete = result?.stats?.ocrExportFrameFiles != null;
+  const awaitingOcrExport = Boolean(
+    result?.engine === "anchor" &&
+    result?.ocrCache &&
+    !ocrExportComplete,
+  );
 
   async function chooseVideo() {
-    if (busy) return;
+    if (busy || exporting || awaitingOcrExport) return;
     setError("");
     setResult(null);
 
@@ -143,6 +153,7 @@ export default function App() {
         asset,
         mode,
         setProgress,
+        { captureOcrCache: engine === "anchor" && captureOcrCache },
       );
       const actualEngine = output.engine ?? engine;
       const status = output.status ??
@@ -161,15 +172,18 @@ export default function App() {
       });
       if (Platform.OS === "android" && engine === "anchor") {
         setProgress(
-          status === "ok"
-            ? "M3 完成，请复制完整验收报告"
-            : "M3 处理结束但有告警，请复制完整验收报告",
+          output.ocrCache
+            ? "M3 处理结束，请先导出 OCR JSON"
+            : status === "ok"
+              ? "M3 完成，请复制完整验收报告"
+              : "M3 处理结束但有告警，请复制完整验收报告",
         );
       } else {
         setProgress("完成，可以复制 Markdown");
       }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
+      const failureStats = caught?.m3FailureStats ?? {};
       setError(message);
       if (Platform.OS === "android" && engine === "anchor") {
         setResult({
@@ -194,6 +208,7 @@ export default function App() {
             durationMs: Math.round(Number(asset.duration)),
             screenAwakeRequested: true,
             failure: message,
+            ...failureStats,
           },
         });
         setProgress("M3 处理失败，请复制完整验收报告");
@@ -217,6 +232,45 @@ export default function App() {
     Alert.alert("已复制", "本次路径、耗时、统计、告警和 Markdown 已复制。");
   }
 
+  async function exportCapturedOcr() {
+    if (!result?.ocrCache || exporting) return;
+    setExporting(true);
+    const started = Date.now();
+    try {
+      const exported = await exportOcrCache(result.ocrCache, {
+        app: result.stats.app,
+        stride: result.stats.stride,
+        timings: result.timings,
+        stats: result.stats,
+        warnings: result.warnings,
+      }, setProgress);
+      const elapsedMs = Date.now() - started;
+      setResult(previous => previous ? {
+        ...previous,
+        stats: {
+          ...previous.stats,
+          ocrExportFolder: exported.folderName,
+          ocrExportFrameFiles: exported.frameFileCount,
+          ocrExportFiles: exported.fileCount,
+          ocrExportBytes: exported.bytes,
+          ocrExportMs: elapsedMs,
+        },
+      } : previous);
+      setProgress("OCR JSON 已导出；请再复制完整验收报告");
+      Alert.alert(
+        "OCR JSON 已导出",
+        `${exported.folderName}\n${exported.frameFileCount} 个逐帧 JSON；` +
+        "回传时只需选择文件夹根部的 M3-OCR-BUNDLE.json。",
+      );
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setProgress("OCR JSON 未导出");
+      Alert.alert("OCR JSON 未导出", message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {Platform.OS === "android" && busy ? <KeepAwakeWhileBusy /> : null}
@@ -232,20 +286,40 @@ export default function App() {
               <ModeButton
                 active={engine === "stitch"}
                 label="现有拼接"
-                onPress={() => !busy && setEngine("stitch")}
+                onPress={() =>
+                  !busy && !exporting && !awaitingOcrExport && setEngine("stitch")
+                }
               />
               <ModeButton
                 active={engine === "anchor"}
                 label="文本锚点 M3"
-                onPress={() => !busy && setEngine("anchor")}
+                onPress={() =>
+                  !busy && !exporting && !awaitingOcrExport && setEngine("anchor")
+                }
               />
             </View>
           </>
         ) : null}
         {Platform.OS === "android" && engine === "anchor" ? (
-          <Text style={styles.anchorHint}>
-            M3 本批只验收浅色模式；未知气泡颜色会明确告警，不会猜测发言人。
-          </Text>
+          <>
+            <Text style={styles.anchorHint}>
+              M3 本批只验收浅色模式；未知气泡颜色会明确告警，不会猜测发言人。
+            </Text>
+            <View style={styles.exportToggleRow}>
+              <View style={styles.exportToggleText}>
+                <Text style={styles.label}>导出完整 4fps OCR JSON</Text>
+                <Text style={styles.anchorHint}>
+                  验收时保持开启；会增加耗时，但不导出视频或图片。
+                </Text>
+              </View>
+              <Switch
+                accessibilityLabel="导出完整 4fps OCR JSON"
+                disabled={busy || exporting || awaitingOcrExport}
+                onValueChange={setCaptureOcrCache}
+                value={captureOcrCache}
+              />
+            </View>
+          </>
         ) : null}
 
         <Text style={styles.label}>模式</Text>
@@ -253,19 +327,29 @@ export default function App() {
           <ModeButton
             active={mode === "wechat"}
             label="微信"
-            onPress={() => !busy && setMode("wechat")}
+            onPress={() =>
+              !busy && !exporting && !awaitingOcrExport && setMode("wechat")
+            }
           />
           <ModeButton
             active={mode === "generic"}
             label="通用"
-            onPress={() => !busy && setMode("generic")}
+            onPress={() =>
+              !busy && !exporting && !awaitingOcrExport && setMode("generic")
+            }
           />
         </View>
 
         <Button
-          disabled={busy}
+          disabled={busy || exporting || awaitingOcrExport}
           onPress={chooseVideo}
-          title={busy ? "处理中…" : "选择录屏"}
+          title={busy
+            ? "处理中…"
+            : exporting
+              ? "正在导出…"
+              : awaitingOcrExport
+                ? "请先导出本段 OCR JSON"
+                : "选择录屏"}
         />
 
         <Text style={styles.progress}>{progress}</Text>
@@ -310,7 +394,8 @@ export default function App() {
               </Text>
             ) : result.engine === "anchor" ? (
               <Text style={styles.stats}>
-                4fps 共 {result.stats.sourceFrameCount} 帧 → stride=7 取
+                4fps 共 {result.stats.sourceFrameCount} 帧 → stride=
+                {result.stats.stride} 取
                 {result.stats.frameCount} 帧；锚点自检
                 {result.stats.anchorPassedCount}/{result.stats.anchorPairCount}；
                 OCR {result.stats.ocrLineCount} 行 → 去重后
@@ -321,7 +406,15 @@ export default function App() {
                 {result.stats.sampleResolvedCount}，未定
                 {result.stats.sampleUnresolvedCount}（错误
                 {result.stats.sampleErrorCount}）；native
-                {result.stats.nativeSamplingMs}ms。
+                {result.stats.nativeSamplingMs}ms。{"\n"}
+                OCR 缓存采集
+                {result.stats.ocrCaptureEnabled
+                  ? `${result.stats.ocrCapturedFrameCount} 帧（完整 4fps）`
+                  : "关闭"}
+                {result.stats.ocrExportFrameFiles != null
+                  ? `；已导出 ${result.stats.ocrExportFrameFiles} 帧 / ` +
+                    `${result.stats.ocrExportBytes} bytes / ${result.stats.ocrExportMs}ms`
+                  : ""}。
               </Text>
             ) : (
               <Text style={styles.stats}>
@@ -341,10 +434,26 @@ export default function App() {
               value={result.markdown}
             />
             {Platform.OS === "android" && result.engine === "anchor" ? (
-              <Button
-                onPress={copyValidationReport}
-                title="复制完整验收报告"
-              />
+              <>
+                {result.ocrCache ? (
+                  <Button
+                    disabled={exporting || ocrExportComplete}
+                    onPress={exportCapturedOcr}
+                    title={exporting
+                      ? "正在导出 OCR JSON…"
+                      : ocrExportComplete
+                        ? "OCR JSON 已导出"
+                        : "导出 OCR JSON"}
+                  />
+                ) : null}
+                <Button
+                  disabled={awaitingOcrExport || exporting}
+                  onPress={copyValidationReport}
+                  title={awaitingOcrExport
+                    ? "请先导出 OCR JSON"
+                    : "复制完整验收报告"}
+                />
+              </>
             ) : null}
             <Button
               disabled={!result.markdown}
@@ -386,6 +495,14 @@ const styles = StyleSheet.create({
   anchorHint: {
     color: "#7a4f00",
     fontSize: 13,
+  },
+  exportToggleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  exportToggleText: {
+    flex: 1,
   },
   label: {
     fontSize: 16,

@@ -60,3 +60,20 @@ python3 score.py <你的输出.md> groundtruth.json <标签>
 同时给三个数：逐条准确率、字符级准确率、发言人准确率。
 
 **看字符级那个。** 逐条准确率在 41 条的分母下一条就是 2.4 个百分点，实测在 87.8%–92.7% 之间抖；字符级稳定在 93.7%–94.0%，只抖 0.3 个点。要对外报数字就报字符级。
+
+## M3 真机 OCR bundle
+
+第四轮 Android 候选可把完整 4fps ML Kit 结果导出成单文件 bundle。它不含视频或图片；
+逐帧对象严格为 `text/x/y/w/h/conf`。收到文件后先还原缓存：
+
+```bash
+node import-device-ocr.mjs /tmp/M3-OCR-BUNDLE.json /tmp/m3-device-ocr
+node anchor-ocr.mjs /tmp/m3-device-ocr plain --stride 3 --out /tmp/replay.md
+```
+
+默认锚点使用 0.90 Levenshtein 相似度、互为唯一最佳和位移簇门禁；默认去重只在至少三帧
+严格多数、且多数版本与更长版本相似度 ≥0.8 时替代“更长胜出”。删除测试分别用
+`--anchors exact`、`--stride 7` 和
+`--dedupe longer`。统计 JSON 位于导出目录的 `meta/`，不会混进 `ocr/` 被误读成一帧。
+导入器会拒绝缺帧、文件名/sourceIndex 不连续、timeMs 不递增或没有证明完整 4fps 捕获的
+bundle，避免把残缺缓存当成删除测试材料。

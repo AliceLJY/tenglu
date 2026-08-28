@@ -27,6 +27,10 @@ class TengluRegionSamplerModule : Module() {
     AsyncFunction("extractFrames") { sourceUri: String, timesJson: String ->
       extractFrames(sourceUri, timesJson)
     }
+
+    AsyncFunction("cleanupFrames") {
+      cleanupFrames()
+    }
   }
 
   private data class RegionRequest(
@@ -61,6 +65,16 @@ class TengluRegionSamplerModule : Module() {
     val outputDir = File(context.cacheDir, "tenglu-anchor")
     if (!outputDir.exists() && !outputDir.mkdirs()) {
       throw IllegalStateException("无法创建 M3 抽帧缓存目录")
+    }
+    val staleFiles = outputDir.listFiles { file ->
+      file.isFile && file.name.startsWith("frame-") && file.name.endsWith(".jpg")
+    }?.toList() ?: emptyList()
+    val staleRemaining = deleteFilesWithRetries(staleFiles)
+    if (staleRemaining > 0) {
+      throw IllegalStateException(
+        "M3 抽帧前发现 ${staleFiles.size} 个旧临时 JPEG，连续清理 3 次后仍残留 " +
+          "$staleRemaining 个"
+      )
     }
 
     val retriever = MediaMetadataRetriever()
@@ -97,10 +111,19 @@ class TengluRegionSamplerModule : Module() {
       return JSONObject()
         .put("frames", frames)
         .put("method", "MediaMetadataRetriever.OPTION_CLOSEST")
+        .put("staleFileCount", staleFiles.size)
+        .put("staleDeletedCount", staleFiles.size - staleRemaining)
         .put("elapsedMs", (System.nanoTime() - started) / 1_000_000.0)
         .toString()
     } catch (error: Exception) {
-      for (file in outputFiles) file.delete()
+      val remaining = deleteFilesWithRetries(outputFiles)
+      if (remaining > 0) {
+        throw IllegalStateException(
+          "${error.message ?: error.javaClass.simpleName}；抽帧失败后连续清理 3 次仍残留 " +
+            "$remaining 个临时 JPEG",
+          error,
+        )
+      }
       throw error
     } finally {
       try {
@@ -110,6 +133,31 @@ class TengluRegionSamplerModule : Module() {
         // not discard a complete batch or hide the original exception.
       }
     }
+  }
+
+  private fun deleteFilesWithRetries(files: List<File>, attempts: Int = 3): Int {
+    var remaining = files.filter { it.exists() }
+    repeat(attempts) { attempt ->
+      if (remaining.isEmpty()) return 0
+      remaining = remaining.filter { file -> file.exists() && !file.delete() }
+      if (remaining.isNotEmpty() && attempt + 1 < attempts) Thread.sleep(10L)
+    }
+    return remaining.count { it.exists() }
+  }
+
+  private fun cleanupFrames(): String {
+    val context = appContext.reactContext
+      ?: throw IllegalStateException("Android context 已失效")
+    val outputDir = File(context.cacheDir, "tenglu-anchor")
+    val files = outputDir.listFiles { file ->
+      file.isFile && file.name.startsWith("frame-") && file.name.endsWith(".jpg")
+    }?.toList() ?: emptyList()
+    val remaining = deleteFilesWithRetries(files)
+    return JSONObject()
+      .put("foundCount", files.size)
+      .put("deletedCount", files.size - remaining)
+      .put("remainingCount", remaining)
+      .toString()
   }
 
   private fun setVideoSource(

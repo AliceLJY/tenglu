@@ -35,6 +35,15 @@ function fixedFpsStrideTimes(durationMs, fps, stride) {
   return fixedFpsTimes(durationMs, fps).filter((_, index) => index % stride === 0);
 }
 
+/** Choose a temporal sampling stride from the maximum allowed frame gap. */
+function strideForMaxGap(fps, maxGapMs) {
+  if (!Number.isFinite(fps) || fps <= 0 ||
+      !Number.isFinite(maxGapMs) || maxGapMs <= 0) {
+    throw new RangeError("fps and maxGapMs must be positive finite numbers");
+  }
+  return Math.max(1, Math.floor(fps * maxGapMs / 1000));
+}
+
 const THUMBNAIL_QUALITY = Object.freeze({
   prescan: 0.4,
   shift: 0.4,
@@ -138,6 +147,7 @@ module.exports = {
   ocrSegmentRanges,
   reconcileAnchorTiming,
   reconcileFrameShiftTiming,
+  strideForMaxGap,
   thumbnailOptions,
   uniformTimes,
 };

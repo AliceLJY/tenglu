@@ -63,6 +63,16 @@ const RULES = [
   { term: "尚待云端 APK 编译与 Alice 真机验收", allow: null },
   // 完整热缓存复跑区间已扩到 55.8ms，禁止保留较早的窄区间。
   { term: "39.6–47.6 ms", allow: null },
+  // M3 局部采样已由 OPPO 真机测到 60ms，设计文档不能继续写成未测。
+  { term: "Android 真机尚未测到这条路径", allow: null },
+  // 第四轮只允许一份新候选清单，不能继续让 Alice 安装第一轮 APK。
+  { term: "881e467c-50db-4ee2-856b-8ea11bf95da2", allow: null },
+  // 多帧多数必须再过“同一文本变体”门禁，不能把相邻行的无关多数拿来替换。
+  { term: "去重只在至少三票严格多数时推翻", allow: /文本变体/ },
+  { term: "只有同一归一化全文至少 3 票且严格过半时采用多数", allow: /相似度|文本变体/ },
+  { term: "默认去重只在至少三帧", allow: /相似度|文本变体/ },
+  { term: "严格多数时替代“更长胜出”", allow: /相似度|文本变体/ },
+  { term: "全文至少 3 票且严格过半时采用多数 observation", allow: /相似度|文本变体/ },
 ];
 
 const SKIP = /node_modules|\.git|package-lock|\/out\/|doc-consistency/;   // 跳过自身：规则定义行必然含这些字样

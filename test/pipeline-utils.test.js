@@ -7,6 +7,7 @@ const {
   ocrSegmentRanges,
   reconcileAnchorTiming,
   reconcileFrameShiftTiming,
+  strideForMaxGap,
   thumbnailOptions,
   uniformTimes,
 } = require("../src/pipeline-utils");
@@ -36,6 +37,14 @@ test("M3 stride 7 requests the same 16 and 19 timestamps as the Mac verifier", (
     () => fixedFpsStrideTimes(1000, 4, 0),
     /stride must be a positive integer/,
   );
+});
+
+test("M3 device stride comes from a 750ms maximum adjacent-frame gap", () => {
+  const stride = strideForMaxGap(4, 750);
+  assert.equal(stride, 3);
+  assert.equal(fixedFpsStrideTimes(26980.356, 4, stride).length, 36);
+  assert.equal(fixedFpsStrideTimes(32030.989, 4, stride).length, 43);
+  assert.throws(() => strideForMaxGap(0, 750), /positive finite/);
 });
 
 test("uniform pre-scan includes both ends and the requested count", () => {

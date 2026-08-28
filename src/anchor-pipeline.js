@@ -15,10 +15,12 @@ const {
   fixedFpsTimes,
   fixedFpsStrideTimes,
   reconcileAnchorTiming,
+  strideForMaxGap,
 } = require("./pipeline-utils");
 
 const FPS = 4;
-const STRIDE = 7;
+const MAX_ANCHOR_GAP_MS = 750;
+const STRIDE = strideForMaxGap(FPS, MAX_ANCHOR_GAP_MS);
 
 function now() {
   return globalThis.performance?.now?.() ?? Date.now();
@@ -43,6 +45,18 @@ function safeDelete(uri) {
   }
 }
 
+async function cleanupTempUris(tempUris, attempts = 3) {
+  let attemptCount = 0;
+  while (tempUris.size && attemptCount < attempts) {
+    attemptCount += 1;
+    for (const uri of [...tempUris]) {
+      if (safeDelete(uri)) tempUris.delete(uri);
+    }
+    if (tempUris.size && attemptCount < attempts) await pauseForUi();
+  }
+  return { attemptCount, remaining: tempUris.size };
+}
+
 async function sampleRegionsNative(requests) {
   // The local module is Android-only. Delaying require keeps the existing iOS
   // stitching app loadable and leaves the independent iOS M3 line untouched.
@@ -62,6 +76,13 @@ async function extractFramesNative(sourceUri, timesMs) {
   return extractFrames(sourceUri, timesMs);
 }
 
+async function cleanupFramesNative() {
+  const { cleanupFrames } = require(
+    "../modules/tenglu-region-sampler/src/TengluRegionSamplerModule"
+  );
+  return cleanupFrames();
+}
+
 function roundTimings(raw, total) {
   return {
     frameExtract: Math.round(raw.frameExtract),
@@ -76,17 +97,24 @@ function roundTimings(raw, total) {
 }
 
 /**
- * M3: OCR selected source frames directly, then reconstruct global text geometry.
+ * M3: OCR source frames directly, then reconstruct global text geometry.
+ * With diagnostic capture enabled every 4fps frame is recognized and retained as
+ * JSON; the algorithm still receives only the configured stride subsequence.
  * JPEGs stay encoded; only ambiguous WeChat text boxes reach BitmapRegionDecoder.
  */
-export async function processAnchorRecording(asset, app = "wechat", onProgress) {
+export async function processAnchorRecording(
+  asset,
+  app = "wechat",
+  onProgress,
+  options = {},
+) {
   if (!asset?.uri) throw new Error("没有拿到录屏文件。");
   const durationMs = Number(asset.duration);
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     throw new Error("无法读取录屏时长，请换一段本机相册里的录屏重试。");
   }
 
-  const state = { tempUris: new Set() };
+  const state = { cleanupRecorded: false, tempUris: new Set() };
   const rawTimings = {
     frameExtract: 0,
     frameOcr: 0,
@@ -101,38 +129,44 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
   try {
     const sourceTimes = fixedFpsTimes(durationMs, FPS);
     const selectedTimes = fixedFpsStrideTimes(durationMs, FPS, STRIDE);
+    const captureOcrCache = options.captureOcrCache === true;
+    const ocrTimes = captureOcrCache ? sourceTimes : selectedTimes;
     if (selectedTimes.length < 2) {
       throw new Error("录屏太短，文本锚点路径至少需要 2 帧。");
     }
 
-    report(onProgress, `M3 精确抽取 ${selectedTimes.length} 帧`);
+    report(
+      onProgress,
+      captureOcrCache
+        ? `M3 诊断导出：精确抽取完整 4fps 共 ${ocrTimes.length} 帧`
+        : `M3 精确抽取 ${ocrTimes.length} 帧`,
+    );
     let started = now();
-    const extracted = await extractFramesNative(asset.uri, selectedTimes);
+    const extracted = await extractFramesNative(asset.uri, ocrTimes);
     rawTimings.frameExtract += now() - started;
     const extractedFrames = extracted?.frames ?? [];
     for (const frame of extractedFrames) {
       if (frame?.uri) state.tempUris.add(frame.uri);
     }
-    if (extractedFrames.length !== selectedTimes.length) {
+    if (extractedFrames.length !== ocrTimes.length) {
       throw new Error(
-        `M3 抽帧数量不符：请求 ${selectedTimes.length}，实际 ${extractedFrames.length}。`,
+        `M3 抽帧数量不符：请求 ${ocrTimes.length}，实际 ${extractedFrames.length}。`,
       );
     }
 
-    const frames = [];
-    const frameUris = extractedFrames.map(frame => frame.uri);
+    const capturedFrames = [];
     let frameWidth = 0;
     let frameHeight = 0;
-    for (let index = 0; index < selectedTimes.length; index++) {
-      const sourceIndex = index * STRIDE;
+    for (let index = 0; index < ocrTimes.length; index++) {
+      const sourceIndex = captureOcrCache ? index : index * STRIDE;
       const thumbnail = extractedFrames[index];
       if (!thumbnail?.uri || !Number.isFinite(thumbnail.width) ||
           !Number.isFinite(thumbnail.height)) {
         throw new Error(`M3 第 ${index + 1} 个抽帧结果无效。`);
       }
-      if (thumbnail.requestedTimeMs !== selectedTimes[index]) {
+      if (thumbnail.requestedTimeMs !== ocrTimes[index]) {
         throw new Error(
-          `M3 第 ${index + 1} 帧时刻不符：请求 ${selectedTimes[index]}ms，` +
+          `M3 第 ${index + 1} 帧时刻不符：请求 ${ocrTimes[index]}ms，` +
           `返回 ${thumbnail.requestedTimeMs}ms。`,
         );
       }
@@ -147,7 +181,7 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
         );
       }
 
-      report(onProgress, `M3 OCR ${index + 1}/${selectedTimes.length}`);
+      report(onProgress, `M3 OCR ${index + 1}/${ocrTimes.length}`);
       started = now();
       const recognized = await TextRecognition.recognize(
         thumbnail.uri,
@@ -155,20 +189,40 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
       );
       const lines = collectFrameLines(recognized, index);
       rawTimings.frameOcr += now() - started;
-      frames.push({
+      capturedFrames.push({
         name: `f_${String(sourceIndex + 1).padStart(4, "0")}.jpg`,
         sourceIndex,
-        timeMs: selectedTimes[index],
+        timeMs: ocrTimes[index],
+        uri: thumbnail.uri,
         lines,
       });
 
       started = now();
       await pauseForUi();
       rawTimings.uiPause += now() - started;
+
+      if (captureOcrCache && sourceIndex % STRIDE !== 0) {
+        started = now();
+        if (safeDelete(thumbnail.uri)) state.tempUris.delete(thumbnail.uri);
+        rawTimings.cleanup += now() - started;
+      }
     }
 
-    if (!frames.some(frame => frame.lines.length)) {
+    if (!capturedFrames.some(frame => frame.lines.length)) {
       throw new Error("OCR 没有识别到任何文字，请确认录屏内容清晰后重试。");
+    }
+
+    const frames = capturedFrames
+      .filter(frame => frame.sourceIndex % STRIDE === 0)
+      .map((frame, compactIndex) => ({
+        ...frame,
+        lines: frame.lines.map(line => ({ ...line, frameIndex: compactIndex })),
+      }));
+    const frameUris = frames.map(frame => frame.uri);
+    if (frames.length !== selectedTimes.length) {
+      throw new Error(
+        `M3 stride 子序列数量不符：预期 ${selectedTimes.length}，实际 ${frames.length}。`,
+      );
     }
 
     report(onProgress, "M3 计算文本锚点与全局位置");
@@ -218,10 +272,9 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
     }
 
     started = now();
-    for (const uri of [...state.tempUris]) {
-      if (safeDelete(uri)) state.tempUris.delete(uri);
-    }
+    const cleanup = await cleanupTempUris(state.tempUris);
     rawTimings.cleanup += now() - started;
+    state.cleanupRecorded = true;
 
     const totalRaw = now() - totalStarted;
     const reconciliation = reconcileAnchorTiming(totalRaw, rawTimings);
@@ -233,7 +286,14 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
     const anchorWarnings = analysis.anchorWarnings.map(warning =>
       `${warning.pair}: ${warning.reasons.join("；")}`,
     );
-    const allWarnings = [...anchorWarnings, ...rendered.speakerWarnings];
+    const cleanupWarnings = cleanup.remaining
+      ? [`临时 JPEG 连续清理 ${cleanup.attemptCount} 次后仍残留 ${cleanup.remaining} 个。`]
+      : [];
+    const allWarnings = [
+      ...anchorWarnings,
+      ...rendered.speakerWarnings,
+      ...cleanupWarnings,
+    ];
 
     return {
       engine: "anchor",
@@ -246,7 +306,10 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
         app,
         fps: FPS,
         stride: STRIDE,
+        maxAnchorGapMs: MAX_ANCHOR_GAP_MS,
         sourceFrameCount: sourceTimes.length,
+        ocrCaptureEnabled: captureOcrCache,
+        ocrCapturedFrameCount: capturedFrames.length,
         frameCount: frames.length,
         frameWidth,
         frameHeight,
@@ -257,6 +320,18 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
         ocrLineCount: frames.reduce((sum, frame) => sum + frame.lines.length, 0),
         contentLineCount: analysis.contentLineCount,
         uniqueLineCount: analysis.uniqueLines.length,
+        dedupeCandidateGroups: analysis.dedupeStats.candidateGroups,
+        dedupeFrameComposedClusters: analysis.dedupeStats.frameComposedClusters,
+        dedupeMajorityEligible: analysis.dedupeStats.majorityEligible,
+        dedupeMajorityChosen: analysis.dedupeStats.majorityChosen,
+        dedupeMajorityRejectedUnrelated:
+          analysis.dedupeStats.majorityRejectedUnrelated,
+        dedupeVariantSimilarityThreshold:
+          analysis.dedupeStats.variantSimilarityThreshold,
+        dedupeChangedSelection: analysis.dedupeStats.changedSelection,
+        dedupeNormalizedChangedSelection:
+          analysis.dedupeStats.normalizedChangedSelection,
+        dedupeLongerFallback: analysis.dedupeStats.longerFallback,
         sampleRegionCount: rendered.speakerStats.dual,
         sampleResolvedCount: rendered.speakerStats.pixelResolved,
         sampleUnresolvedCount: rendered.speakerStats.pixelUnresolved,
@@ -265,11 +340,33 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
         sampledPixels: rendered.speakerStats.sampledPixels,
         nativeDecoderCount: sampleBatch.decoderCount,
         frameExtractionMethod: extracted.method,
+        nativeStaleTempFileCount: extracted.staleFileCount ?? 0,
+        nativeStaleTempFileDeletedCount: extracted.staleDeletedCount ?? 0,
         nativeFrameExtractMs: Math.round(extracted.elapsedMs),
         nativeSamplingMs: Math.round(sampleBatch.elapsedMs),
         timingAccountedMs: Math.round(reconciliation.accountedMs),
         timingDeltaMs: Math.round(reconciliation.unclassifiedMs),
         timingThresholdMs: Math.round(reconciliation.thresholdMs),
+        cleanupAttemptCount: cleanup.attemptCount,
+        remainingTempFileCount: cleanup.remaining,
+        anchorDetails: analysis.shifts.map(shift => ({
+          pair: `${shift.from}→${shift.to}`,
+          shift: shift.shift,
+          votes: shift.votes,
+          total: shift.total,
+          voteRatio: shift.total ? shift.votes / shift.total : 0,
+          cumulativeShift: shift.cumulativeShift,
+          exactTotal: shift.exactTotal,
+          fuzzyCandidates: shift.fuzzyCandidates,
+          fuzzyAccepted: shift.fuzzyAccepted,
+          fuzzyRejected: shift.fuzzyRejected,
+          fuzzyRescue: shift.fuzzyRescue,
+          fuzzyCandidateVotes: shift.fuzzyCandidateVotes ?? 0,
+          fuzzyCandidateTotal: shift.fuzzyCandidateTotal ?? 0,
+          fuzzyCandidateVoteRatio: shift.fuzzyCandidateTotal
+            ? shift.fuzzyCandidateVotes / shift.fuzzyCandidateTotal
+            : null,
+        })),
         sampleDetails: rendered.speakerSamples.map(sample => ({
           id: sample.id,
           frameIndex: sample.frameIndex,
@@ -284,10 +381,64 @@ export async function processAnchorRecording(asset, app = "wechat", onProgress) 
           error: sample.error,
         })),
       },
+      ocrCache: captureOcrCache
+        ? {
+            fps: FPS,
+            sourceFrameCount: sourceTimes.length,
+            frameWidth,
+            frameHeight,
+            frames: capturedFrames.map(frame => ({
+              name: frame.name,
+              sourceIndex: frame.sourceIndex,
+              timeMs: frame.timeMs,
+              lines: frame.lines,
+            })),
+          }
+        : null,
     };
+  } catch (caught) {
+    const cleanupStarted = now();
+    const jsCleanup = await cleanupTempUris(state.tempUris);
+    let nativeCleanup = null;
+    let nativeCleanupError = "";
+    try {
+      nativeCleanup = await cleanupFramesNative();
+      if (nativeCleanup.remainingCount === 0) state.tempUris.clear();
+    } catch (cleanupError) {
+      nativeCleanupError = cleanupError instanceof Error
+        ? cleanupError.message
+        : String(cleanupError);
+    }
+    rawTimings.cleanup += now() - cleanupStarted;
+    state.cleanupRecorded = true;
+
+    const original = caught instanceof Error ? caught : new Error(String(caught));
+    const remainingTempFileCount = nativeCleanup
+      ? nativeCleanup.remainingCount
+      : null;
+    let message = original.message;
+    if (nativeCleanupError) {
+      message += `；异常后的 native 临时 JPEG 清理状态未知：${nativeCleanupError}`;
+    } else if (remainingTempFileCount) {
+      message += `；异常后连续清理仍残留 ${remainingTempFileCount} 个临时 JPEG`;
+    }
+    const error = new Error(message);
+    error.m3FailureStats = {
+      cleanupAttemptCount: jsCleanup.attemptCount,
+      jsRemainingTempFileCount: jsCleanup.remaining,
+      nativeCleanupFoundCount: nativeCleanup?.foundCount ?? null,
+      nativeCleanupDeletedCount: nativeCleanup?.deletedCount ?? null,
+      nativeCleanupError: nativeCleanupError || null,
+      remainingTempFileCount,
+    };
+    throw error;
   } finally {
-    for (const uri of state.tempUris) safeDelete(uri);
+    if (!state.cleanupRecorded) await cleanupTempUris(state.tempUris);
   }
 }
 
-export const ANCHOR_PIPELINE_CONSTANTS = { FPS, STRIDE };
+export const ANCHOR_PIPELINE_CONSTANTS = {
+  FPS,
+  MAX_ANCHOR_GAP_MS,
+  STRIDE,
+};

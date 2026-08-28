@@ -3,7 +3,9 @@
  * 文本锚点架构（M3 验证）：直接从每帧 OCR 结果还原长文本；只有满宽歧义气泡
  * 在显式传入 --frames 时才用 djpeg 解码对应文本框的小区域。
  *
- *   node anchor-ocr.mjs <OCR缓存目录> <wechat|plain> [--stride N] [--frames 帧目录] [--out out.md] [--diag]
+ *   node anchor-ocr.mjs <OCR缓存目录> <wechat|plain> [--stride N]
+ *     [--anchors fuzzy|exact] [--similarity 0.9]
+ *     [--dedupe consensus|longer] [--frames 帧目录] [--out out.md] [--diag]
  *
  * 与现有拼接架构的分工：拼接架构靠像素对齐（jpeg-js 解码 + SAD 粗搜 + 拼长图），
  * 本脚本靠文本自身携带的几何信息；像素只用于坐标无法区分的发言人：
@@ -24,6 +26,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { sampleBrightMedianRgb } = require("../src/ocr-utils.js");
 const { classifyBubbleColor } = require("../src/postprocess.js");
+const {
+  dedupePlacedLineGroups,
+  estimateShift: estimateAnchorShift,
+} = require("../src/anchor-utils.js");
 
 // ── 参数
 const argv = process.argv.slice(2);
@@ -41,18 +47,34 @@ if (framesArg >= 0 && (!argv[framesArg + 1] || argv[framesArg + 1].startsWith("-
 const STRIDE = Number(opt("stride", 7));
 const FRAME_DIR = opt("frames", null);
 const OUT = opt("out", null);
+const DEDUPE_MODE = opt("dedupe", "consensus");
+const ANCHOR_MODE = opt("anchors", "fuzzy");
+const FUZZY_SIMILARITY = Number(opt("similarity", 0.9));
 const DIAG = argv.includes("--diag");
 if (!cacheDir) {
-  console.error("用法: node anchor-ocr.mjs <OCR缓存目录> <wechat|plain> [--stride N] [--frames 帧目录] [--out f.md] [--diag]");
+  console.error(
+    "用法: node anchor-ocr.mjs <OCR缓存目录> <wechat|plain> [--stride N] " +
+    "[--anchors fuzzy|exact] [--similarity 0.9] " +
+    "[--dedupe consensus|longer] [--frames 帧目录] [--out f.md] [--diag]",
+  );
+  process.exit(1);
+}
+if (!["consensus", "longer"].includes(DEDUPE_MODE)) {
+  console.error("参数错误：--dedupe 只能是 consensus 或 longer");
+  process.exit(1);
+}
+if (!["fuzzy", "exact"].includes(ANCHOR_MODE) ||
+    !Number.isFinite(FUZZY_SIMILARITY) ||
+    FUZZY_SIMILARITY < 0 || FUZZY_SIMILARITY > 1) {
+  console.error(
+    "参数错误：--anchors 只能是 fuzzy/exact，--similarity 必须在 0–1 之间",
+  );
   process.exit(1);
 }
 
 // ── 可调参数（改这里，不要散落在代码里）
-const SHIFT_TOL = 3;        // 位移投票的聚类容差 px
 const FIXED_BAND = 20;      // 固定 UI 的 y 带宽度 px
 const FIXED_RATIO = 0.8;    // 占用率超过它就算固定 UI
-const DEDUP_WINDOW = 90;    // 去重的几何邻域 ±px
-const SAME_BOX_OVERLAP = 0.6; // 跨帧同一文本框的面积包含率
 const ALIGN_TOL = 30;       // 判定"贴着对齐峰"的容差 px
 const MERGE_DY = 62;        // 同一气泡内续行的最大行距
 const MERGE_DX = 60;        // 同一气泡内续行的最大左边界差
@@ -62,7 +84,6 @@ const WECHAT_TIME = /^(昨天\s*)?\d{1,2}[:：]\d{2}$/;
 const DJPEG_BIN = process.env.DJPEG_BIN ?? "djpeg";
 
 const norm = s => s.replace(/[\s，。、,.…""'']/g, "");
-const clen = s => Array.from(s).length;
 const band = y => Math.round(y / FIXED_BAND);
 
 // ── 载入
@@ -189,40 +210,12 @@ function findFixedBands(frames) {
 const fixedBands = findFixedBands(frames);
 const isFixed = l => fixedBands.has(band(l.y));
 
-// ── 2. 帧间位移：共同文本行的 y 差，±SHIFT_TOL 聚类投票
-function clusterVote(diffs) {
-  if (!diffs.length) return { shift: 0, votes: 0, total: 0 };
-  const sorted = [...diffs].sort((a, b) => a - b);
-  const clusters = [];
-  for (const d of sorted) {
-    const last = clusters[clusters.length - 1];
-    if (last && d - last[last.length - 1] <= SHIFT_TOL) last.push(d);
-    else clusters.push([d]);
-  }
-  clusters.sort((a, b) => b.length - a.length);
-  const top = clusters[0];
-  return { shift: top[Math.floor(top.length / 2)], votes: top.length, total: diffs.length };
-}
-
+// ── 2. 帧间位移：精确文本优先；0.90 模糊候选须经位移簇门禁
 function estimateShift(prev, cur) {
-  const index = new Map();
-  for (const l of prev) {
-    if (isFixed(l)) continue;
-    const k = norm(l.text);
-    if (clen(k) < 4) continue;
-    if (!index.has(k)) index.set(k, []);
-    index.get(k).push(l);
-  }
-  const diffs = [];
-  for (const l of cur) {
-    if (isFixed(l)) continue;
-    const k = norm(l.text);
-    if (clen(k) < 4) continue;
-    const hits = index.get(k);
-    if (!hits || hits.length !== 1) continue;   // 同一文本在前帧出现多次 ⇒ 不能当锚点
-    diffs.push(hits[0].y - l.y);
-  }
-  return clusterVote(diffs);
+  return estimateAnchorShift(prev, cur, fixedBands, {
+    fuzzy: ANCHOR_MODE === "fuzzy",
+    fuzzySimilarity: FUZZY_SIMILARITY,
+  });
 }
 
 const shifts = [];
@@ -241,9 +234,24 @@ function checkAnchors(shifts) {
   return shifts
     .map((s, i) => {
       const ratio = s.total ? s.votes / s.total : 0;
+      const fuzzyCandidateTotal = s.fuzzyCandidateTotal ?? 0;
+      const fuzzyCandidateVotes = s.fuzzyCandidateVotes ?? 0;
       const reasons = [];
-      if (s.total === 0) reasons.push("无共同文本（锚点 0，明确无重叠）");
-      else if (s.total < MIN_ANCHOR) reasons.push(`锚点仅 ${s.total} 个（1–2，不可单独采信）`);
+      if (s.total === 0) {
+        reasons.push(
+          fuzzyCandidateTotal
+            ? `有模糊候选 ${fuzzyCandidateTotal} 个（最大簇 ${fuzzyCandidateVotes}），` +
+              "但未达独立救援门禁；无可采信锚点"
+            : "无共同文本（锚点 0，明确无重叠）",
+        );
+      } else if (s.total < MIN_ANCHOR) {
+        reasons.push(
+          `精确锚点仅 ${s.total} 个（1–2，不可单独采信）` +
+          (fuzzyCandidateTotal
+            ? `；另有模糊候选 ${fuzzyCandidateTotal} 个未达独立救援门禁`
+            : ""),
+        );
+      }
       else if (ratio < MIN_VOTE) reasons.push(`位移投票分散（最大簇 ${(ratio * 100).toFixed(0)}% < ${MIN_VOTE * 100}%）`);
       return reasons.length ? { pair: `${s.from}→${s.to}`, index: i, reasons } : null;
     })
@@ -262,41 +270,16 @@ function findAlignPeaks(lines) {
   return { left: peak(L)[0], right: peak(R)[0] };
 }
 
-// ── 4. 去重：可靠位移路径内，同位置文本框以较完整的那次识别为准
-function boxContainment(a, b) {
-  const overlapX = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
-  const overlapY = Math.max(0, Math.min(a.gy + a.h, b.gy + b.h) - Math.max(a.gy, b.gy));
-  const smallerArea = Math.min(a.w * a.h, b.w * b.h);
-  return smallerArea ? (overlapX * overlapY) / smallerArea : 0;
-}
-
-function hasReliableShiftPath(a, b) {
-  const lo = Math.min(a.frameIndex, b.frameIndex);
-  const hi = Math.max(a.frameIndex, b.frameIndex);
-  return shifts.slice(lo, hi).every(s =>
-    s.total >= MIN_ANCHOR && s.votes / (s.total || 1) >= MIN_VOTE
-  );
-}
-
+// ── 4. 去重：与 Android 共用几何限域和跨帧候选选择
+let dedupeStats;
+let dedupeDetails;
 function dedupe(lines) {
-  const sorted = [...lines].sort((a, b) => a.gy - b.gy || a.x - b.x);
-  const out = [];
-  for (const l of sorted) {
-    const k = norm(l.text);
-    if (!k) continue;
-    let merged = false;
-    for (let i = out.length - 1; i >= 0; i--) {
-      const p = out[i];
-      if (Math.abs(p.gy - l.gy) > DEDUP_WINDOW) continue;
-      if (p.frameIndex === l.frameIndex || !hasReliableShiftPath(p, l)) continue;
-      if (boxContainment(p, l) < SAME_BOX_OVERLAP) continue;
-      if (clen(l.text) > clen(p.text)) out[i] = l;    // 更完整的那次识别胜出
-      merged = true;
-      break;
-    }
-    if (!merged) out.push(l);
-  }
-  return out.sort((a, b) => a.gy - b.gy || a.x - b.x);
+  const result = dedupePlacedLineGroups(lines, shifts, {
+    majorityConsensus: DEDUPE_MODE === "consensus",
+  });
+  dedupeStats = result.stats;
+  dedupeDetails = result.details;
+  return result.lines;
 }
 
 const content = placed.filter(l => !isFixed(l) && norm(l.text));
@@ -409,7 +392,12 @@ function renderPlain(lines) {
     if (!row || l.gy - row.gy >= 18) rows.push({ gy: l.gy, parts: [l] });
     else row.parts.push(l);
   }
-  return { peaks: null, text: rows.map(r => r.parts.sort((a, b) => a.x - b.x).map(p => p.text).join(" ")).join("\n") };
+  return {
+    peaks: null,
+    text: rows.map(row => row.parts.sort((a, b) => a.x - b.x)
+      .map(part => part.dedupeParts?.join(" ") ?? part.text)
+      .join(" ")).join("\n"),
+  };
 }
 
 const rendered = mode === "wechat" ? renderWechat(unique) : renderPlain(unique);
@@ -418,6 +406,25 @@ const rendered = mode === "wechat" ? renderWechat(unique) : renderPlain(unique);
 console.error(`帧 ${files.length} → 取 ${frames.length}（stride=${STRIDE}）`);
 console.error(`固定 UI y 带: ${[...fixedBands].sort((a, b) => a - b).map(b => b * FIXED_BAND).join(", ") || "无"}`);
 console.error(`总滚动 ${cum} px，文本行 ${content.length} → 去重后 ${unique.length}`);
+const fuzzyCandidates = shifts.reduce(
+  (sum, shift) => sum + (shift.fuzzyCandidates ?? 0),
+  0,
+);
+const fuzzyAccepted = shifts.reduce(
+  (sum, shift) => sum + (shift.fuzzyAccepted ?? 0),
+  0,
+);
+const fuzzyRescues = shifts.filter(shift => shift.fuzzyRescue).length;
+console.error(
+  `模糊锚点 ${ANCHOR_MODE === "fuzzy" ? FUZZY_SIMILARITY.toFixed(2) : "关闭"}：` +
+  `候选 ${fuzzyCandidates}，接纳 ${fuzzyAccepted}，` +
+  `几何拒绝 ${fuzzyCandidates - fuzzyAccepted}，独立救援 ${fuzzyRescues} 对`,
+);
+console.error(
+  `去重候选簇 ${dedupeStats.candidateGroups}，共识采用 ${dedupeStats.majorityChosen}，` +
+  `拒绝无关多数 ${dedupeStats.majorityRejectedUnrelated}，` +
+  `改选 ${dedupeStats.changedSelection}，更长回退 ${dedupeStats.longerFallback}`,
+);
 if (rendered.peaks) console.error(`对齐峰: 左 ${rendered.peaks.left}（对方） 右 ${rendered.peaks.right}（我）`);
 if (rendered.speakerStats) {
   const s = rendered.speakerStats;
@@ -441,7 +448,33 @@ if (warnings.length) {
 if (DIAG) {
   console.error(`\n位移明细：`);
   for (const s of shifts) {
-    console.error(`   ${s.from}→${s.to}  ${String(s.shift).padStart(5)}px  锚点 ${String(s.total).padStart(3)}  簇占比 ${((s.votes / (s.total || 1)) * 100).toFixed(0).padStart(3)}%  累积 ${s.cum}`);
+    const rescueRaw = s.fuzzyCandidateTotal
+      ? `  救援原始簇 ${s.fuzzyCandidateVotes}/${s.fuzzyCandidateTotal}`
+      : "";
+    console.error(
+      `   ${s.from}→${s.to}  ${String(s.shift).padStart(5)}px  ` +
+      `锚点 ${String(s.total).padStart(3)}  ` +
+      `簇占比 ${((s.votes / (s.total || 1)) * 100).toFixed(0).padStart(3)}%  ` +
+      `模糊 ${s.fuzzyAccepted ?? 0}/${s.fuzzyCandidates ?? 0}` +
+      `${rescueRaw}  累积 ${s.cum}`,
+    );
+  }
+  const changedDedupe = dedupeDetails.filter(detail =>
+    detail.kind === "strict-majority" &&
+    detail.selectedText !== detail.longerText
+  );
+  const rejectedDedupe = dedupeDetails.filter(detail =>
+    detail.kind === "unrelated-majority-rejected"
+  );
+  if (changedDedupe.length || rejectedDedupe.length) {
+    console.error(`\n去重共识明细：`);
+    for (const detail of [...changedDedupe, ...rejectedDedupe]) {
+      console.error(
+        `   ${detail.kind}  sim=${detail.variantSimilarity.toFixed(3)}  ` +
+        `edit=${detail.variantEditDistance}  ` +
+        `${JSON.stringify(detail.longerText)} → ${JSON.stringify(detail.proposedText)}`,
+      );
+    }
   }
   if (rendered.speakerSamples?.length) {
     console.error(`\n发言人局部像素明细：`);
