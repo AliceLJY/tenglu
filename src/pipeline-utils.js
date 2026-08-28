@@ -27,6 +27,24 @@ function fixedFpsTimes(durationMs, fps) {
   );
 }
 
+const THUMBNAIL_QUALITY = Object.freeze({
+  prescan: 1,
+  shift: 0.4,
+  keyframe: 1,
+});
+
+/** Keep thumbnail quality explicit for every pipeline purpose. */
+function thumbnailOptions(timeMs, purpose) {
+  if (!Number.isFinite(timeMs) || timeMs < 0) {
+    throw new RangeError("timeMs must be a non-negative finite number");
+  }
+  const quality = THUMBNAIL_QUALITY[purpose];
+  if (quality === undefined) {
+    throw new RangeError(`unknown thumbnail purpose: ${purpose}`);
+  }
+  return { time: timeMs, quality };
+}
+
 function ocrSegmentRanges(totalHeight, segmentHeight, overlap) {
   if (!Number.isInteger(totalHeight) || totalHeight < 1 ||
       !Number.isInteger(segmentHeight) || segmentHeight < 1 ||
@@ -77,5 +95,6 @@ module.exports = {
   fixedFpsTimes,
   ocrSegmentRanges,
   reconcileFrameShiftTiming,
+  thumbnailOptions,
   uniformTimes,
 };

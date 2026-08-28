@@ -5,6 +5,7 @@ const {
   fixedFpsTimes,
   ocrSegmentRanges,
   reconcileFrameShiftTiming,
+  thumbnailOptions,
   uniformTimes,
 } = require("../src/pipeline-utils");
 
@@ -22,6 +23,25 @@ test("fixed 4fps produces the two verified recording frame counts", () => {
 test("uniform pre-scan includes both ends and the requested count", () => {
   assert.deepEqual(uniformTimes(1001, 3), [0, 500, 1000]);
   assert.deepEqual(uniformTimes(1001, 1), [0]);
+});
+
+test("L4.1 uses low-quality shift frames and full-quality source frames", () => {
+  assert.deepEqual(thumbnailOptions(250, "prescan"), {
+    time: 250,
+    quality: 1,
+  });
+  assert.deepEqual(thumbnailOptions(500, "shift"), {
+    time: 500,
+    quality: 0.4,
+  });
+  assert.deepEqual(thumbnailOptions(750, "keyframe"), {
+    time: 750,
+    quality: 1,
+  });
+  assert.throws(
+    () => thumbnailOptions(1000, "unknown"),
+    /unknown thumbnail purpose/,
+  );
 });
 
 test("5107px OCR ranges use 1400px segments with 200px overlap", () => {

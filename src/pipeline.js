@@ -27,6 +27,7 @@ const {
   fixedFpsTimes,
   ocrSegmentRanges,
   reconcileFrameShiftTiming,
+  thumbnailOptions,
   uniformTimes,
 } = require("./pipeline-utils");
 
@@ -72,12 +73,12 @@ async function decodeJpeg(uri) {
   return image;
 }
 
-async function grabFrame(videoUri, timeMs, state) {
+async function grabFrame(videoUri, timeMs, state, purpose) {
   const started = now();
-  const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, {
-    time: timeMs,
-    quality: 1,
-  });
+  const thumbnail = await VideoThumbnails.getThumbnailAsync(
+    videoUri,
+    thumbnailOptions(timeMs, purpose),
+  );
   const took = now() - started;
   state.thumbnailMs += took;
   state.tempUris.add(thumbnail.uri);
@@ -192,7 +193,12 @@ export async function processRecording(asset, app = "wechat", onProgress) {
     const preTimes = uniformTimes(durationMs, preset.preScan);
     for (let index = 0; index < preTimes.length; index++) {
       report(onProgress, `预扫 ${index + 1}/${preTimes.length}`);
-      const thumb = await grabFrame(asset.uri, preTimes[index], state);
+      const thumb = await grabFrame(
+        asset.uri,
+        preTimes[index],
+        state,
+        "prescan",
+      );
       const image = await decodeJpeg(thumb.uri);
       if (index === 0) {
         width = image.width;
@@ -219,15 +225,20 @@ export async function processRecording(asset, app = "wechat", onProgress) {
     // 2) Fixed 4fps extraction and adjacent-frame shifts.
     phaseStarted = now();
     const frameTimes = fixedFpsTimes(durationMs, FPS);
-    const frameUris = [];
+    const thumbnailUris = [];
     const shifts = [];
     const shiftThumbnailStarted = state.thumbnailMs;
     let previousCoarseGray = null;
 
     for (let index = 0; index < frameTimes.length; index++) {
       report(onProgress, `取帧与位移 ${index + 1}/${frameTimes.length}`);
-      const thumb = await grabFrame(asset.uri, frameTimes[index], state);
-      frameUris.push(thumb.uri);
+      const thumb = await grabFrame(
+        asset.uri,
+        frameTimes[index],
+        state,
+        "shift",
+      );
+      thumbnailUris.push(thumb.uri);
 
       let detailStarted = now();
       const image = await decodeJpeg(thumb.uri);
@@ -262,15 +273,25 @@ export async function processRecording(asset, app = "wechat", onProgress) {
 
     let detailStarted = now();
     const keyframes = pickKeyframes(shifts, viewHeight);
-    const regions = new Array(frameUris.length);
+    const regions = new Array(frameTimes.length);
     frameShiftDetails.keyframeMs += now() - detailStarted;
     previousCoarseGray = null;
     for (let index = 0; index < keyframes.keep.length; index++) {
       report(onProgress, `准备关键帧 ${index + 1}/${keyframes.keep.length}`);
       const frameIndex = keyframes.keep[index];
 
+      // The low-quality shift thumbnail is never used for stitching. Re-extract
+      // the selected source frame at full quality before full-resolution rematch.
+      const thumb = await grabFrame(
+        asset.uri,
+        frameTimes[frameIndex],
+        state,
+        "keyframe",
+      );
+      thumbnailUris.push(thumb.uri);
+
       detailStarted = now();
-      const image = await decodeJpeg(frameUris[frameIndex]);
+      const image = await decodeJpeg(thumb.uri);
       assertSameFrameSize(image, width, height);
       regions[frameIndex] = copyRgbaRows(
         image.data,
@@ -309,7 +330,7 @@ export async function processRecording(asset, app = "wechat", onProgress) {
     regions.fill(null);
 
     // JPEG thumbnails are no longer needed once the long RGBA canvas exists.
-    for (const uri of frameUris) {
+    for (const uri of thumbnailUris) {
       if (safeDelete(uri)) state.tempUris.delete(uri);
     }
 
