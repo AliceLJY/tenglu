@@ -261,14 +261,23 @@ const warnings = checkAnchors(shifts);
 
 // ── 3. 发言人：左/右边界的峰
 function findAlignPeaks(lines) {
+  // 峰值只在几何上说得通的一侧找：左对齐峰必然靠近屏幕左缘，右对齐峰必然靠近右缘。
+  // 少了这条约束，取帧一密、噪声行一多，最高频就会落到屏幕中间某个反复出现的小元素上——
+  // 2026-08-28 真机 stride=3 就是这样把右峰算成 123（屏幕宽 720），导致双贴峰归零、
+  // 局部采样一次都不触发、"我"的短消息被整条丢弃、长消息全判成"对方"。
+  const width = Math.max(...lines.map(l => l.x + l.w), 1);
+  const mid = width / 2;
   const L = new Map(), R = new Map();
   for (const l of lines) {
-    L.set(l.x, (L.get(l.x) ?? 0) + 1);
-    R.set(l.x + l.w, (R.get(l.x + l.w) ?? 0) + 1);
+    if (Array.from(l.text).length < 2) continue;   // 单字碎片不参与投票
+    if (l.x < mid) L.set(l.x, (L.get(l.x) ?? 0) + 1);
+    const r = l.x + l.w;
+    if (r > mid) R.set(r, (R.get(r) ?? 0) + 1);
   }
   const peak = m => [...m.entries()].sort((a, b) => b[1] - a[1])[0] ?? [NaN, 0];
   return { left: peak(L)[0], right: peak(R)[0] };
 }
+
 
 // ── 4. 去重：与 Android 共用几何限域和跨帧候选选择
 let dedupeStats;
