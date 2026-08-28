@@ -1063,6 +1063,16 @@ M3 五条 Done when 全部达成后，Alice 选择原方案 2：Android 默认�
 - APK 完成后记录构建状态、源提交、字节数和 SHA-256，并由 Alice 按 `verify/M3-DEVICE-ACCEPTANCE.md` 运行两段浅色素材。
 - 只有两份真机报告通过，才创建 annotated `v0.3.0` tag 和 GitHub Release，并挂同一份已验 APK。
 
+### v0.3.0 唯一候选 APK（待 Alice 两段浅色真机验收）
+
+- EAS build ID：`d6dc7577-b0b1-4bef-ad55-8a7f1d6c3637`，状态 `FINISHED`，完成于 2026-08-28 15:28:02 UTC。
+- 构建页：<https://expo.dev/accounts/aliceljy/projects/tenglu/builds/d6dc7577-b0b1-4bef-ad55-8a7f1d6c3637>。
+- APK：<https://expo.dev/artifacts/eas/8pWQBkAyYMn3zh48YMIy7_1-RJziT19525P45-eK8ic.apk>。
+- 源提交：`436c7b26509912d2074e81a53a7eecc83dbfbd44`；版本 `0.3.0`。
+- 文件大小：`114584348` bytes（约 109.3 MiB）；SHA-256：
+  `9ab21d768b1e1fb3ccb1f67e0f39d7568c5199fd5c67a199af66fb3b675b587d`。
+- 本地下载与 ZIP/APK 完整性检查均退出码 0。它现在只是唯一候选；在两份真机报告通过前，不创建 tag 或 GitHub Release。
+
 ### 已知限制
 
 深色模式尚未在真机验证。当前保护承诺是：判不出发言人时跳过该气泡、明确告警并建议用拼接路径重试；这不等于拼接路径已在深色模式验证，也不等于深色模式不可用。微信群聊已有一次 44.2 秒临时实测，昵称字段已用同次完整 bundle 离线验证，但仍没有字符级真值、第二台设备或其他分辨率证据；其他 app 仍没有真机覆盖。

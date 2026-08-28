@@ -171,6 +171,20 @@ for (const [label, actual] of [
   console.log(`✗ ${label}  版本应为 ${EXPECTED_VERSION}，实际 ${actual ?? "缺失"}`);
   bad++;
 }
+const EXPECTED_V030_CANDIDATE = {
+  "EAS build ID": "d6dc7577-b0b1-4bef-ad55-8a7f1d6c3637",
+  "源提交": "436c7b26509912d2074e81a53a7eecc83dbfbd44",
+  "APK 字节数": "114584348",
+  "APK SHA-256": "9ab21d768b1e1fb3ccb1f67e0f39d7568c5199fd5c67a199af66fb3b675b587d",
+};
+for (const file of ["PLAN.md", "verify/M3-DEVICE-ACCEPTANCE.md"]) {
+  const text = readFileSync(join(ROOT, file), "utf8");
+  for (const [label, expected] of Object.entries(EXPECTED_V030_CANDIDATE)) {
+    if (text.includes(expected)) continue;
+    console.log(`✗ ${file}  缺少 v0.3.0 候选 ${label}: ${expected}`);
+    bad++;
+  }
+}
 for (const file of [...walk(ROOT), ...EXTRA.flatMap(d => { try { return walk(d); } catch { return []; } })]) {
   const text = readFileSync(file, "utf8");
   // 已封存的历史文档豁免：顶部自带封存标记 + 明写"以 PLAN.md 为准"的，

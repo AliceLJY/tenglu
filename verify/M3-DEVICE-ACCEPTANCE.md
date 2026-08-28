@@ -5,8 +5,20 @@
 
 ## 候选 APK
 
-本批 EAS 构建完成后，在这里登记唯一候选的下载链接、构建页、状态、源提交、字节数和
-SHA-256。构建前不复用任何旧 APK。
+这是本批唯一候选，不复用任何旧 APK：
+
+| 项 | 值 |
+|---|---|
+| 下载 | https://expo.dev/artifacts/eas/8pWQBkAyYMn3zh48YMIy7_1-RJziT19525P45-eK8ic.apk |
+| 构建页 | https://expo.dev/accounts/aliceljy/projects/tenglu/builds/d6dc7577-b0b1-4bef-ad55-8a7f1d6c3637 |
+| EAS build ID | `d6dc7577-b0b1-4bef-ad55-8a7f1d6c3637` |
+| 状态 | `FINISHED`（2026-08-28 15:28:02 UTC） |
+| 版本 | `0.3.0` |
+| 源提交 | `436c7b26509912d2074e81a53a7eecc83dbfbd44` |
+| 文件大小 | `114584348` bytes（约 109.3 MiB） |
+| SHA-256 | `9ab21d768b1e1fb3ccb1f67e0f39d7568c5199fd5c67a199af66fb3b675b587d` |
+
+本地下载后的 ZIP/APK 完整性检查退出码为 0；该文件不加入公开仓库。
 
 ## 手机上只做这七步
 
