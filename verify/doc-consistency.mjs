@@ -71,6 +71,8 @@ const RULES = [
   { term: "待本批 EAS 构建完成后填写", allow: null },
   // 第五轮只能交付新的唯一候选，验收清单不能继续指向第四轮 APK。
   { term: "2fc13155-b9c6-4034-b0a4-fdbfc6eb0b0a", allow: null },
+  // 第五轮唯一候选已由 EAS 构建完成，所有交付字段都必须填真实值。
+  { term: "待第五轮唯一候选构建完成后填写", allow: null },
   // 第五轮性能候选不再把完整 4fps 诊断采集混入 ≤40s 验收。
   { term: "验收时保持开启", allow: null },
   { term: "报告未证明完整 4fps OCR 已采集并导出", allow: null },
