@@ -44,7 +44,8 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 ## Status
 
 - **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
-- **M2 (in progress, Level 4):** Level 3 passed on-device acceptance with byte-identical output and cut total time from 247.0 s to 164.3 s. Level 4.1/4.2 now use quality-0.4 JPEGs for adjacent coarse searches and pre-scan analysis, while selected keyframes are re-extracted at quality 1 for full-resolution stitching. On-device benefit and output equivalence are awaiting verification. No native modules unless pure JS provably cannot reach the target.
+- **M2 (done):** 247.0 s → 161.6 s on-device (−34.5%), accuracy unchanged throughout (byte-identical output at every level). Per-stage timing localised the real bottleneck: **JPEG decode in JS — 71% of the pipeline**, not the SAD search we all assumed.
+- **M3 (planned):** a text-anchor architecture that skips pixel alignment entirely — OCR every frame, derive inter-frame offsets from shared text lines, dedupe geometrically. Measured against the same ground truth: **93.9% character accuracy, 95.1% speaker accuracy, ~10× faster**. Not shipped until it clears the same verification gates.
 - Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
 
 ## Development
