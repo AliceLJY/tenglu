@@ -51,8 +51,22 @@ b = "".join(norm(m["text"]) for g, m, _ in res if m)
 char = difflib.SequenceMatcher(None, a, b).ratio()
 idx = [got.index(m) for g, m, _ in res if m]
 
+# 分母里还混着"含表情标记但不是纯表情"的条目 —— VISUAL 的 `^\[(A|B)\]+$` 只允许一个
+# 左括号，`[Facepalm][Facepalm]...` 这类连发匹配不上，于是留在了分母里。OCR 读不到表情，
+# 任何还原路线都产不出它们，所以发言人与逐条的真实上限低于 100%。
+# 有意不修那个正则：修了分母会从 41 变 39，M1/M2/M3 的历史数字将全部不可比。
+# 尺子保持不动，但必须自己说清上限，否则"还差几个点"会被一路误读。
+EMOJI = re.compile(r"\[(图片|表情|Facepalm|Lol|视频|动画表情)\]")
+unreachable = [g for g in gtt if EMOJI.search(g["text"])]
+
 print(f"{label} | 可读文本 {len(gtt)} 条 vs 输出 {len(got)} 条")
+if unreachable:
+    print(f"  ⚠ 其中 {len(unreachable)} 条含表情标记、OCR 产不出 —— "
+          f"发言人与逐条的上限是 {len(gtt) - len(unreachable)}/{len(gtt)}"
+          f" = {(len(gtt) - len(unreachable)) / len(gtt) * 100:.1f}%，不是 100%")
+    for g in unreachable:
+        print(f"      [{g['who']}] {g['text']}")
 print(f"  字符级      {char*100:5.1f}%   ← 报这个（基准 93.7%，验收线 ≥90%）")
-print(f"  发言人      {who}/{len(gtt)} = {who/len(gtt)*100:5.1f}%   （基准 95.1%，验收线 ≥39/41）")
+print(f"  发言人      {who}/{len(gtt)} = {who/len(gtt)*100:5.1f}%   （上限见上方 ⚠ 行，≥39/41 即满分）")
 print(f"  逐条一致    {full}/{len(gtt)} = {full/len(gtt)*100:5.1f}%   （粒度粗、会抖，仅供参考）")
 print(f"  顺序        {'完全正确' if idx == sorted(idx) else '有错乱'}")
