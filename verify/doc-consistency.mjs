@@ -18,12 +18,20 @@ const EXTRA = [process.env.HOME + "/Desktop/个人机遇/面试项目/誊录"];
 
 // term: 出现即需检查的字样；allow: 允许的行内语境；allowFile: 允许的封存文件
 const RULES = [
-  { term: "walkKeyframes", allow: /已废弃|不要用|不要复活|不要接回|任何批次|试探法后被|中途试过|历史|反例|module\.exports|^async function|^\s*\*/ },
+  { term: "walkKeyframes", allow: /废弃|不要用|不要复活|不要接回|任何批次|试探法后被|中途试过|历史|反例|module\.exports|^async function|^\s*\*/ },
   { term: "M2 可选", allow: null },
   { term: "降级为 M2", allow: null },
   { term: "getThumbnailAsync 可指定宽度", allow: null },
   { term: "唯一的大头", allow: /Mac 上/ },
   { term: "抽帧是最大的未知数", allow: /~~|已被真机实测推翻/ },
+  // 下面这类是"曾经写过、后来被证伪"的说法。它们仍可出现，但**同一行内必须自带否定标记**——
+  // 否则冷读者（人或 agent）读到那一行就会当成现行结论。
+  // 2026-08-28 实证：有两处我肉眼判定"这是历史语境"而放行，废弃标记在下一行，
+  // 冷读方随即又报了一次。同一行自带否定，是唯一能一行行读就读对的写法。
+  { term: "运算 /16", allow: /不成立|不是|订正|⚠️/ },
+  { term: "所有运算", allow: /不成立|不是|订正|⚠️/ },
+  { term: "遍历约 98 万", allow: /不成立|不是|订正|错了|⚠️/ },
+  { term: "收益已被数据否定", allow: /不是|订正|错的|⚠️/ },
   { term: "逐帧位移（两级 SAD", allow: null },
   { term: "per-frame displacement (two-stage SAD", allow: null },
   { term: "逐帧 `estimateShift`", allow: null, allowFile: /交接-M1\.md$/ },
