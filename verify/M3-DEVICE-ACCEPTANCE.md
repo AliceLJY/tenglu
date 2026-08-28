@@ -5,9 +5,11 @@
 
 ## 唯一候选 APK
 
-- 安装包：`待本批 EAS 构建完成后填写`
-- 构建页：`待本批 EAS 构建完成后填写`
-- 状态 / 源提交 / 大小 / SHA-256：`待本批 EAS 构建完成后填写`
+- 安装包：[下载唯一候选 APK](https://expo.dev/artifacts/eas/J1kP93LsRqHMBY0fjPVITfGaJenWVsFYFUkJOn5ZOQM.apk)
+- 构建页：[EAS Build 2fc13155-b9c6-4034-b0a4-fdbfc6eb0b0a](https://expo.dev/accounts/aliceljy/projects/tenglu/builds/2fc13155-b9c6-4034-b0a4-fdbfc6eb0b0a)
+- 状态：`FINISHED`；源提交：`b11c230c52eae4ef9f424f22ad38bbd461a1f38b`
+- 大小：`114,576,880 bytes（109.27 MiB）`
+- SHA-256：`66fa677f97ca58fb254a6e9dbf3eb8ab0da2d47bc2191b5255db2991df804133`
 
 ## 手机上只做这六步
 
