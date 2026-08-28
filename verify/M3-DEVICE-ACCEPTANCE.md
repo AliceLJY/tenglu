@@ -3,9 +3,18 @@
 本清单只用于 M3 候选 APK 的一次性验收。现有拼接路径仍完整保留；本次用已经保存的
 M2-L3 微信基线做对照，不重复执行耗时较长的旧路径。
 
+## 唯一候选 APK
+
+- 安装包：[M3 Android candidate APK](https://expo.dev/artifacts/eas/NKc2RY9TdGD0yWK9QNUNgMp_DxF8_ilCd2R5h6ZZBfk.apk)
+- 构建页：[EAS build 881e467c-50db-4ee2-856b-8ea11bf95da2](https://expo.dev/accounts/aliceljy/projects/tenglu/builds/881e467c-50db-4ee2-856b-8ea11bf95da2)
+- 状态：`FINISHED`；源提交：`adc630698dddc1dc90dcf8ce373fb8bfe6ea740d`
+- 大小：`114552140` bytes
+- SHA-256：`fc1eff19b573728b24ace2c82b844317c4f9c667c50f5dd607ecb5c2afdf2447`
+- EAS 下载链接有效期至 2026-09-11。
+
 ## 手机上只做这六步
 
-1. 安装交付消息中标为 “M3 Android candidate” 的唯一 APK。
+1. 安装上方 “M3 Android candidate APK”。
 2. 手机使用浅色模式，保持竖屏；打开“誊录”，允许它读取所选视频。
 3. 顶部“处理路径”选择“文本锚点 M3”。同一位置的“现有拼接”就是保留的旧路径，本次不要运行它。
 4. “模式”选择“微信”，选择时长约 0:27 的微信录屏。完成后点“复制完整验收报告”，粘贴到一条消息的“微信”段。

@@ -59,6 +59,8 @@ const RULES = [
   { term: "这条路线目前只活在 `verify/` 下", allow: null },
   // M3 真机路线已改为独立阶段计时，不能继续要求拼接架构的固定 13 项。
   { term: "回传 13 项耗时 + Markdown", allow: null },
+  // M3 Android preview 已由 EAS 编译完成，不能继续写成等待云端编译。
+  { term: "尚待云端 APK 编译与 Alice 真机验收", allow: null },
   // 完整热缓存复跑区间已扩到 55.8ms，禁止保留较早的窄区间。
   { term: "39.6–47.6 ms", allow: null },
 ];

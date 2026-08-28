@@ -707,5 +707,6 @@ Android 侧设计见 `verify/ANDROID-SAMPLING.md`（`BitmapRegionDecoder` 路线
 5. 与 M2-L3 真机输出逐字节比对（预期有差异，有差异时跑 `score.py` 看质量有没有掉）
 
 **当前进度**：候选路线已经作为 Android App 内可切换的第二条路径实现，包含
-「逐帧 ML Kit OCR + BitmapRegionDecoder 局部采样」；尚待云端 APK 编译与 Alice 真机验收。
+「逐帧 ML Kit OCR + BitmapRegionDecoder 局部采样」。EAS preview APK 已从提交 `adc6306`
+编译完成，尚待 Alice 真机验收与回传后的逐字节/质量比较。
 按交接文档，**拼接架构在真机验证通过前不能删**，当前仍是默认路径。
