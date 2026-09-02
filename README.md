@@ -1,18 +1,49 @@
 # 誊录 Tenglu
 
-**Turn a scrolling screen recording into a clean Markdown transcript. 100% on-device.**
+**Turn what you can't copy — a WeChat chat, a Xiaohongshu comment thread, a long group discussion — into searchable, saveable text. Record your screen while you scroll, pick the video in Tenglu, get a clean transcript. 100% on your phone, never online.**
 
-Record yourself scrolling through a WeChat chat or a Xiaohongshu comment section. On Android, Tenglu now uses text anchors by default: it OCRs selected frames, derives scroll offsets from shared text, dedupes by geometry, and hands you a faithful, ordered, copy-pasteable transcript. The earlier image-stitching pipeline remains available as a fallback.
+Android app, free and open source. No account, no server, no upload. iOS is planned. [中文说明 →](README_CN.md)
 
-The name comes from 誊录, the Song-dynasty imperial examination practice of having clerks copy every candidate's paper verbatim so graders couldn't recognize handwriting. That is the whole product promise: **faithful transcription, zero interpretation.**
+## Download
 
-## Why
+| Where | Link | Notes |
+|---|---|---|
+| GitHub Release | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB · v0.3.0 · works on every Android CPU type |
+| Baidu Netdisk mirror (mainland China) | [pan.baidu.com/s/…](https://pan.baidu.com/s/1h6MYqrMeJd_1ZUxbLWT6eQ?pwd=tl03) · code `tl03` | same file, for when GitHub is slow |
+
+Install: open the APK, allow the install when Android asks, then open **誊录**. To check the file is untouched, the SHA-256 of `tenglu-v0.3.0.apk` is `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`. All versions: [Releases](https://github.com/AliceLJY/tenglu/releases/latest).
+
+## How to use
+
+1. **Record.** Start your phone's built-in screen recorder, open the chat or comment section you want to keep, scroll slowly and steadily from top to bottom, then stop recording. Keep consecutive screens overlapping — scroll too fast and content gets skipped; Tenglu warns you when its self-check thinks that happened.
+2. **Pick the video.** Open Tenglu, choose **微信** (WeChat chats) or **通用** (generic — comment sections, articles, any scrolling text), tap **选择录屏** and select the recording. Leave the processing path on the default **文本锚点 M3**.
+3. **Take the text.** Wait a few seconds. When it says 处理完成, tap **复制 Markdown**: a speaker-tagged, in-order transcript is on your clipboard. Paste it into notes, a document, or any AI you like.
+
+What comes out (illustrative):
+
+```
+[对方] 周五的会改到下午三点了
+[我] 收到，材料我先发你
+```
+
+`[我]` is me, `[对方]` is the other side. Generic mode outputs plain lines without speaker tags.
+
+## What it does — and what it hasn't been tested on
+
+- Tested on three real scenarios: a WeChat one-on-one chat, a Xiaohongshu note with its comment section, and a WeChat group chat. Other messengers, dark mode and recordings longer than about 45 seconds are untested — generic mode should work on any scrolling text, but "should" is not "was measured".
+- Portrait phones only. Foldables: fold it first.
+- It transcribes, it doesn't interpret: no summaries, no guessing who replied to whom, no like counts. Sticker and emoji-only messages can't be read by OCR and are not in the output.
+- On the real conversation used for acceptance, every recognisable message got the right speaker in the right order; the errors were a handful of wrong characters. The exact numbers, and how they were measured, are in [Measured accuracy](#measured-accuracy) below.
+
+## Why — and why nothing leaves your phone
 
 Apps summarize your content for you and keep the raw material. Tenglu does the opposite: it gives you the raw material and stays out of the way.
 
 - **Restore, don't analyze.** Output is a plain transcript (speaker + text, in order). What model reads it is your business.
 - **Nothing leaves the phone.** No server, no API key, no account. The APK ships with `android.permission.INTERNET` explicitly blocked — verified by running the full pipeline in airplane mode.
 - **No content filtering.** Your screen, your data, your transcript.
+
+The name comes from 誊录, the Song-dynasty imperial examination practice of having clerks copy every candidate's paper verbatim so graders couldn't recognize handwriting. That is the whole product promise: **faithful transcription, zero interpretation.**
 
 ## Measured accuracy
 
@@ -65,6 +96,8 @@ and a WeChat group chat. Not other messengers, not dark mode, not recordings lon
 but "should" is not "was measured".
 
 ## How it works
+
+Record yourself scrolling through a WeChat chat or a Xiaohongshu comment section. On Android, Tenglu now uses text anchors by default: it OCRs selected frames, derives scroll offsets from shared text, dedupes by geometry, and hands you a faithful, ordered, copy-pasteable transcript. The earlier image-stitching pipeline remains available as a fallback.
 
 ```
 Android default:
