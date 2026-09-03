@@ -9,7 +9,6 @@ Android app, free and open source. No account, no server, no upload. iOS is plan
 | Where | Link | Notes |
 |---|---|---|
 | GitHub Release | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB · v0.3.0 · works on every Android CPU type |
-| Baidu Netdisk mirror (mainland China) | [pan.baidu.com/s/…](https://pan.baidu.com/s/1h6MYqrMeJd_1ZUxbLWT6eQ?pwd=tl03) · code `tl03` | same file, for when GitHub is slow |
 
 Install: open the APK, allow the install when Android asks, then open **誊录**. To check the file is untouched, the SHA-256 of `tenglu-v0.3.0.apk` is `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`. All versions: [Releases](https://github.com/AliceLJY/tenglu/releases/latest).
 

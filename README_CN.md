@@ -9,7 +9,6 @@
 | 从哪下 | 链接 | 说明 |
 |---|---|---|
 | GitHub Release | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB，v0.3.0，所有安卓机型通用 |
-| 百度网盘（国内镜像） | [pan.baidu.com/s/…](https://pan.baidu.com/s/1h6MYqrMeJd_1ZUxbLWT6eQ?pwd=tl03)，提取码 `tl03` | 同一个文件，GitHub 下得慢就用这个 |
 
 装法：下载后点开 APK，系统问「是否允许安装」就允许，装好后打开「誊录」。想核对文件没被改过：`tenglu-v0.3.0.apk` 的 SHA-256 是 `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`。历史版本见 [Releases](https://github.com/AliceLJY/tenglu/releases/latest)。
 
