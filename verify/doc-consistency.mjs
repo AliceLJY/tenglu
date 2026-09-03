@@ -138,18 +138,20 @@ let bad = 0;
 // 让每次改动都在 diff 里留下痕迹。
 //
 // 更新记录：
+// 2026-09-03  README 中英文互换文件名（README.md=中文默认脸面，README_EN.md=英文），Alice 拍板；
+//             两段冻结内容与 hash 都没变，只是所在文件名跟着换。
 // 2026-08-29  修同节内自相矛盾（前文已记群聊实测，后文仍写"没试过群聊"），
 //             并把"超过 30 秒"订正为"超过 45 秒"（群聊 44.2 秒是目前最长）。
 //             矛盾由 Codex 在 v0.3.0 发布报告的 concerns 中指出。
 const FROZEN_SECTIONS = [
   {
-    file: "README.md",
+    file: "README_EN.md",
     start: "### What was actually tested",
     end: "## How it works",
     sha256: "754926f1bedd947fe64f3cb66f7cdb370ef2212dc0b58ec5de95283d9bb9722d",
   },
   {
-    file: "README_CN.md",
+    file: "README.md",
     start: "### 实际测过的范围",
     end: "## 工作原理",
     sha256: "e70206d72c534e9aa2d60944999c578425bb2d920340116219af06804af285b1",
@@ -195,7 +197,7 @@ for (const file of ["PLAN.md", "verify/M3-DEVICE-ACCEPTANCE.md"]) {
 }
 const EXPECTED_V030_RELEASE_DOCS = [
   {
-    file: "README.md",
+    file: "README_EN.md",
     facts: [
       "text anchors by default",
       "image-stitching pipeline remains available as a fallback",
@@ -204,7 +206,7 @@ const EXPECTED_V030_RELEASE_DOCS = [
     ],
   },
   {
-    file: "README_CN.md",
+    file: "README.md",
     facts: [
       "默认走文本锚点",
       "长图拼接路径仍作为回退保留",

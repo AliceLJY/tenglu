@@ -1,150 +1,140 @@
-# 誊录 Tenglu
+# 誊录
 
-**Turn what you can't copy — a WeChat chat, a Xiaohongshu comment thread, a long group discussion — into searchable, saveable text. Record your screen while you scroll, pick the video in Tenglu, get a clean transcript. 100% on your phone, never online.**
+**微信聊天记录、小红书评论区、群里刷过去的长讨论……这些复制不了的东西，对着屏幕录一段往下滑的视频，誊录就把它变成一份能搜、能存、能复制的文字记录。全程在你手机上完成，不联网。**
 
-Android app, free and open source. No account, no server, no upload. iOS is planned. [中文说明 →](README_CN.md)
+安卓 App，免费开源，不用注册、没有服务器、不上传。iPhone 版还在计划中。[English →](README_EN.md)
 
-## Download
+## 下载
 
-| Where | Link | Notes |
+| 从哪下 | 链接 | 说明 |
 |---|---|---|
-| **GitHub Release (recommended)** | [tenglu-v0.3.0-arm64.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0-arm64.apk) | **40 MB** · v0.3.0 · 64-bit ARM, i.e. virtually every phone sold since 2019 |
-| GitHub Release, full build | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB · v0.3.0 · every Android CPU type, only needed for old 32-bit or x86 devices |
+| **GitHub Release（推荐）** | [tenglu-v0.3.0-arm64.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0-arm64.apk) | **40 MB**，v0.3.0，64 位 ARM 手机——2019 年以后卖的手机基本都是 |
+| GitHub Release（全量版） | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB，v0.3.0，所有安卓机型通用，只有很老的 32 位机或 x86 设备才需要 |
 
-Install: open the APK, allow the install when Android asks, then open **誊录**. SHA-256: `tenglu-v0.3.0-arm64.apk` = `ed8fba2a3be6479e9150dd46d37dabc6b0500c2142d32e9e68945073747a1402`, `tenglu-v0.3.0.apk` = `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`. All versions: [Releases](https://github.com/AliceLJY/tenglu/releases/latest).
+装法：下载后点开 APK，系统问「是否允许安装」就允许，装好后打开「誊录」。想核对文件没被改过：`tenglu-v0.3.0-arm64.apk` 的 SHA-256 是 `ed8fba2a3be6479e9150dd46d37dabc6b0500c2142d32e9e68945073747a1402`，`tenglu-v0.3.0.apk` 的是 `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`。历史版本见 [Releases](https://github.com/AliceLJY/tenglu/releases/latest)。
 
-## How to use
+## 怎么用
 
-1. **Record.** Start your phone's built-in screen recorder, open the chat or comment section you want to keep, scroll slowly and steadily from top to bottom, then stop recording. Keep consecutive screens overlapping — scroll too fast and content gets skipped; Tenglu warns you when its self-check thinks that happened.
-2. **Pick the video.** Open Tenglu, choose **微信** (WeChat chats) or **通用** (generic — comment sections, articles, any scrolling text), tap **选择录屏** and select the recording. Leave the processing path on the default **文本锚点 M3**.
-3. **Take the text.** Wait a few seconds. When it says 处理完成, tap **复制 Markdown**: a speaker-tagged, in-order transcript is on your clipboard. Paste it into notes, a document, or any AI you like.
+1. **录屏。** 用手机自带的屏幕录制，进到要保存的聊天或评论区，从头往下匀速慢慢滑到底，再停止录制。滑慢一点，让前后两屏有重叠——滑太快会漏内容，誊录自检发现了会提示你。
+2. **选视频。** 打开誊录，「模式」选「微信」（聊天记录）或「通用」（评论区、文章等其他滚动内容），点「选择录屏」，选中刚才的视频。处理路径保持默认的「文本锚点 M3」就行。
+3. **拿文字。** 等几秒到十几秒，看到「处理完成」就点「复制 Markdown」，一份带发言人、按顺序的文字记录已经在剪贴板里了，贴到备忘录、文档或任何 AI 里都行。
 
-## See it run
+## 它跑起来是什么样
 
-![Tenglu demo: pick a screen recording, wait a few seconds, copy the transcript](docs/media/demo.gif)
+![誊录演示：选一段录屏，等几秒，复制文字记录](docs/media/demo.gif)
 
-Home → processing → result:
+首页 → 处理中 → 结果页：
 
-![Home screen](docs/media/01-home.png)
-![Processing](docs/media/02-processing.png)
-![Result page](docs/media/03-result.png)
+![首页](docs/media/01-home.png)
+![处理中](docs/media/02-processing.png)
+![结果页](docs/media/03-result.png)
 
-What comes out (illustrative):
+出来的东西长这样（示意）：
 
 ```
 [对方] 周五的会改到下午三点了
 [我] 收到，材料我先发你
 ```
 
-`[我]` is me, `[对方]` is the other side. Generic mode outputs plain lines without speaker tags.
+「通用」模式输出的是一行行纯文本，不带发言人标签。
 
-## What it does — and what it hasn't been tested on
+## 能干什么、哪些还没测过
 
-- Tested on three real scenarios: a WeChat one-on-one chat, a Xiaohongshu note with its comment section, and a WeChat group chat. Other messengers, dark mode and recordings longer than about 45 seconds are untested — generic mode should work on any scrolling text, but "should" is not "was measured".
-- Portrait phones only. Foldables: fold it first.
-- It transcribes, it doesn't interpret: no summaries, no guessing who replied to whom, no like counts. Sticker and emoji-only messages can't be read by OCR and are not in the output.
-- Generic mode keeps everything the screen shows: in the demo above, the status-bar clock and the note author's name from the fixed header leaked into the transcript, so expect to delete a few lines by hand.
-- On the real conversation used for acceptance, every recognisable message got the right speaker in the right order; the errors were a handful of wrong characters. The exact numbers, and how they were measured, are in [Measured accuracy](#measured-accuracy) below.
+- 实际测过三种场景：微信单聊、小红书笔记加评论区、微信群聊。别的聊天软件、深色模式、超过 45 秒的录屏都还没测——通用模式理论上对任何滚动文本都成立，但理论上不等于测过。
+- 只支持竖屏手机；折叠机合起来用。
+- 只还原、不解读：不总结、不猜「谁回复谁」、不猜点赞数。纯表情、贴纸消息 OCR 读不到，输出里不会有。
+- 通用模式是屏幕上有什么字就收什么字：上面演示那段里，状态栏的时间和顶栏的作者名就混进了记录，拿到手要自己删几行。
+- 用来验收的那段真实微信对话里，能识别的消息发言人全对、顺序全对，错的是个别错别字；具体数字和口径见下面「实测准确率」。
 
-## Why — and why nothing leaves your phone
+## 为什么做（以及为什么不联网）
 
-Apps summarize your content for you and keep the raw material. Tenglu does the opposite: it gives you the raw material and stays out of the way.
+各家 app 都在替你总结内容、留下原料。誊录反过来：把原料给你，自己退开。
 
-- **Restore, don't analyze.** Output is a plain transcript (speaker + text, in order). What model reads it is your business.
-- **Nothing leaves the phone.** No server, no API key, no account. The APK ships with `android.permission.INTERNET` explicitly blocked — verified by running the full pipeline in airplane mode.
-- **No content filtering.** Your screen, your data, your transcript.
+- **只还原，不分析。** 输出是纯文本记录（发言人 + 内容 + 顺序）。用什么模型读，是你的自由。
+- **数据不出手机。** 无服务器、无 API key、无账号。APK 显式禁用了 `INTERNET` 权限——用飞行模式跑通完整流水线验证过。
+- **不做内容审查。** 你的屏幕，你的数据，你的记录。
 
-The name comes from 誊录, the Song-dynasty imperial examination practice of having clerks copy every candidate's paper verbatim so graders couldn't recognize handwriting. That is the whole product promise: **faithful transcription, zero interpretation.**
+名字取自宋代科举的誊录制度：专人把考生原卷一字不改地抄一遍，让阅卷官认不出笔迹。这正是产品的全部承诺：**忠实还原，零解读。**
 
-## Measured accuracy
+## 实测准确率
 
-Validated against ground truth exported from the actual WeChat database (44 messages, real conversation). The Android column records the earlier stitching baseline; the Android text-anchor default is reported under M3 below.
+对照从微信数据库导出的真实记录（44 条消息）逐条验收。安卓一列记录的是此前的拼接基线；安卓默认文本锚点的成绩见下方 M3：
 
-| Metric | Android stitching baseline (ML Kit) | macOS (Vision) | iOS (Vision, independent impl.) |
+| 指标 | 安卓拼接基线（ML Kit） | macOS（Vision） | iOS（Vision，独立实现） |
 |---|---|---|---|
-| Character-level accuracy | 96.2% | 99.6% | 99.5% |
-| Speaker attribution | 39/39 | 39/39 | 39/39 |
-| Message order | 100% | 100% | 100% |
+| 字符级准确率 | 96.2% | 99.6% | 99.5% |
+| 发言人归属 | 39/39 | 39/39 | 39/39 |
+| 消息顺序 | 100% | 100% | 100% |
 
-Denominator is 39: of the 44 recorded messages, 5 are pure sticker/emoji sends that no OCR
-engine can read, so they are excluded. Earlier revisions of this table reported the three
-columns under two different denominators (41 / 41 / 39), which made iOS look more accurate —
-under one denominator all three are the same result.
+分母为 39 条：44 条记录里有 5 条是纯表情消息，任何 OCR 引擎都读不到，不计入。
+本表早先的版本用两种分母（41 / 41 / 39）并列报数，看起来像 iOS 更准，
+统一口径后三列是同一个成绩。
 
-Speaker attribution samples the bubble background color (WeChat green vs. white) rather than
-guessing from position — it held at 39/39 across three platforms and two OCR engines.
+发言人判定采气泡底色（微信绿 vs 白），不靠位置猜——跨三个平台两个 OCR 引擎，稳定在 39/39。
 
-### What was actually tested
+### 实际测过的范围
 
-Be clear about the scale — these two clips are the **entire** validation set:
+先把规模说清楚——下面这两段就是**全部**验证素材：
 
-| | WeChat one-on-one chat | Xiaohongshu note + comments |
+| | 微信单聊 | 小红书笔记 + 评论区 |
 |---|---|---|
-| Recording length | **27.0 s** | **32.0 s** |
-| Frames at 4 fps | 108 | 128 |
-| Screen | 720 × 1652 | 720 × 1652 |
-| Ground truth | 44 messages (15 mine / 29 theirs), 39 text-only totalling **569 characters** | none — no exported truth exists for this content |
-| Longest / shortest message | 133 chars / 1 char | — |
-| Total scroll distance | 3,744 px | 10,415 px |
-| Stitched long image | 720 × 5,106 | 720 × 13,558 |
-| Output | 40 messages | 202 lines / ~2,375 characters |
+| 录屏时长 | **27.0 秒** | **32.0 秒** |
+| 4fps 抽帧 | 108 帧 | 128 帧 |
+| 屏幕 | 720 × 1652 | 720 × 1652 |
+| 真值 | 44 条消息（我 15 / 对方 29），纯文本 39 条共 **569 字** | 无——这类内容没有可导出的标准答案 |
+| 最长 / 最短一条 | 133 字 / 1 字 | — |
+| 总滚动距离 | 3,744 px | 10,415 px |
+| 拼接长图 | 720 × 5,106 | 720 × 13,558 |
+| 输出 | 40 条消息 | 202 行 / 约 2,375 字 |
 
-A WeChat **group chat** was added later as an ad-hoc test (44.2 s / 177 frames / 60 real messages
-in range): 59 of 60 messages recovered, all 35 anchor checks passed, 10.2 s total.
-No character-level figure for group chat — the screen shows per-group display names while the
-database exports wxids, so no verbatim ground truth can be built.
-Two grey-background bubbles (RGB 225) could not be resolved; the app flagged them and skipped
-them rather than guessing.
+后来又临时加测了一段**微信群聊**（44.2 秒 / 177 帧 / 覆盖 60 条真实消息）：
+内容召回 59/60，失败自检 35/35 全过，耗时 10.2 秒。
+群聊没有字符级数字——屏幕显示的是群昵称、数据库导出的是 wxid，对不上，无法构造逐字真值。
+其中 2 个灰底气泡（RGB 225）判不出发言人，程序明确告警并跳过，没有猜。
 
-So: **one 27-second WeChat conversation with a 569-character ground truth is the only
-character-level accuracy measurement in this README.** The Xiaohongshu clip has no exported
-ground truth, so it only verifies coverage (line count, scroll distance, anchor health) —
-not per-character correctness.
+也就是说：**本文所有字符级准确率，都来自那一段 27 秒、569 字的微信对话。**
+小红书那段没有可导出的真值，它验的只是覆盖度（行数、滚动距离、锚点健康度），
+**不是逐字正确性**。
 
-**Only the three scenarios above have ever been run.** WeChat one-on-one, Xiaohongshu comments,
-and a WeChat group chat. Not other messengers, not dark mode, not recordings longer than ~45 s
-(the 44.2 s group chat is the longest so far). Generic mode should work on any scrolling text,
-but "should" is not "was measured".
+**跑过的只有上面这三个场景。** 微信单聊、小红书评论区、微信群聊。
+没试过别的聊天软件、没试过深色模式、也没试过超过 45 秒的录屏
+（群聊那段 44.2 秒是目前最长的一次）。通用模式理论上对任何滚动文本都成立，
+但「理论上」不等于「测过」。
 
-## How it works
+## 工作原理
 
-Record yourself scrolling through a WeChat chat or a Xiaohongshu comment section. On Android, Tenglu now uses text anchors by default: it OCRs selected frames, derives scroll offsets from shared text, dedupes by geometry, and hands you a faithful, ordered, copy-pasteable transcript. The earlier image-stitching pipeline remains available as a fallback.
+对着微信聊天记录或小红书评论区录一段滑动的屏。安卓端现在默认走文本锚点：对选定帧做 OCR，用共同文本推算滚动位移，再按几何位置去重，交给你一份忠实、有序、可复制的完整记录。原有的长图拼接路径仍作为回退保留。
 
 ```
-Android default:
-video → fixed-rate frame plan → per-frame OCR → fixed-UI removal
-      → text-anchor offsets + failure self-check → geometric dedupe
-      → ambiguous-bubble region sampling → Markdown
+安卓默认路径：
+视频 → 固定频率取帧计划 → 逐帧 OCR → 去除固定 UI
+    → 文本锚点位移 + 失败自检 → 几何去重
+    → 歧义气泡局部采样 → Markdown
 
-Stitching fallback:
-video → sparse pre-scan → scroll-region detection → fixed-interval frames
-      → SAD displacement → keyframe selection → long-image stitching
-      → segmented OCR → position-based dedupe → Markdown
+拼接回退路径：
+视频 → 稀疏预扫 → 检测滚动区 → 固定间隔取帧
+    → SAD 位移 → 选关键帧 → 拼成长图
+    → 分段 OCR → 按位置去重 → Markdown
 ```
 
-Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), Chinese):
+踩出来的设计原则（完整工程记录见 [PLAN.md](PLAN.md)）：
 
-- **Prefer duplication over loss.** Overlap can be deduped; lost content is gone. Displacement estimates are conservative and the output layer cleans up.
-- **Don't infer hidden structure.** Early versions tried to label "reply-to" and like-counts with regexes — 4 errors in 48 comments. M3 never guesses those semantics from text. A group display name becomes a field only when OCR returned it as a geometrically separate row above the bubble; an unclear layout keeps the original text intact.
-- **Every self-check lied at least once.** The only reliable judge was comparing output against decrypted ground truth. If you can't diff against reality, you don't know your accuracy.
+- **宁可多不可少。** 重复能去掉，丢失补不回来。位移估计取保守值，重叠交给输出层收拾。
+- **不推断隐藏结构。** 早期版本用正则去判“回复谁”“点赞数”，48 条评论错 4 条；M3 不再从文字内容猜这些语义。群昵称只有在 OCR 把它识别为气泡上方、几何上独立的一行时才成为字段；布局不清楚就原样保留全文。
+- **每个自检都至少撒过一次谎。** 唯一可靠的裁判是拿输出对照解密出的真实记录。没有能对照的现实，就不知道自己的准确率。
 
-## Status
+## 状态
 
-- **M1 (done):** minimal Android APK — pick video → transcript → clipboard, with per-stage timing. WeChat mode + generic mode.
-- **M2 (done):** 247.0 s → 161.6 s on-device (−34.5%), accuracy unchanged throughout (byte-identical output at every level). Per-stage timing localised the real bottleneck: **JPEG decode in JS — 71% of the pipeline**, not the SAD search we all assumed.
-- **M3 (Android default in v0.3.0):** a text-anchor architecture that skips pixel alignment entirely — OCR selected frames, derive inter-frame offsets from shared text lines, dedupe geometrically, and sample a few pixels only for bubbles whose speaker coordinates alone cannot resolve. Same phone, same OCR engine, same ground truth as the stitching path: **5.913 s vs. 161.6 s (27.3× faster)** with character accuracy **91.4% vs. 90.6%** and speaker 39/39 on both (accuracy here counts all 41 ground-truth messages, 2 of which are unrecognisable by design; the summary table's 96.2% is the same stitching path converted to the 39-recognisable-message basis). Generic mode passes all 42 anchor checks. The stitching path remains available in the path switch; if a self-check warns that content may be missing, the result page offers a one-tap stitching retry. Dark mode has not been verified on a device: an unresolved speaker is omitted with an explicit warning rather than being guessed.
-- **Group display names:** when OCR returns a smaller, independently positioned display-name row above an incoming WeChat bubble, M3 emits `[display name] message` instead of joining the name into the body. The supplied 44.2 s group-chat bundle produced 65 independent name fields while preserving all 1,976 OCR characters under reversible comparison. This is one-device offline replay evidence, not a claim of general group-chat or cross-resolution coverage.
-- Portrait phones only. Foldables: fold it first. iOS build planned (the algorithm is already verified on iOS Vision).
+- **M1（已完成）**：最小安卓 APK——选视频 → 出记录 → 复制到剪贴板，逐阶段耗时可见。微信模式 + 通用模式。
+- **M2（已完成）**：真机 247.0 秒 → 161.6 秒（降 34.5%），准确率全程未动（每一级输出都做过逐字节比对）。逐阶段计时定位出真正的瓶颈：**JS 里的 JPEG 解码占 71%**，而不是所有人以为的 SAD 搜索。
+- **M3（v0.3.0 起为安卓默认路径）**：一条绕开像素对齐的文本锚点架构——对选定帧做 OCR，用共同文本行推算帧间位移，几何去重，只对纯坐标判不出发言人的气泡采样极少量像素。同一台手机、同一个 OCR 引擎、同一份真值，与拼接路径对比：**5.913 秒 vs 161.6 秒（快 27.3 倍）**，字符级 **91.4% vs 90.6%**，发言人同为 39/39（此处字符级按全部 41 条真值消息计、含 2 条本身不可识别的；顶部表格里拼接路径的 96.2% 是同一成绩换算到 39 条可识别消息口径后的数）。通用模式 42 处锚点校验全过。处理路径开关仍保留拼接回退；自检发现可能漏内容时，结果页会提示并提供一键拼接重试。深色模式尚未在真机验证：发言人判不出时会跳过该气泡并明确告警，不会静默猜测。
+- **群聊昵称字段**：OCR 若读到位于对方气泡上方、字号和位置均独立的昵称行，M3 会输出 `[昵称] 正文`，不再把昵称粘进正文。对现有 44.2 秒群聊 bundle 离线复现时得到 65 个独立昵称字段，可逆比对中 1,976 个 OCR 字符全部保留。证据只来自一台设备的一份 bundle，不代表群聊或其他分辨率已全面覆盖。
+- 仅支持竖屏手机；折叠机请合起来用。iOS 版在计划中（算法已在 iOS Vision 上验证）。
 
-## Development
+## 开发方式
 
-Built through AI collaboration: design & acceptance by Claude, implementation by Codex, cross-verified by an independent iOS implementation. Every milestone gated on reproducible benchmarks (`verify/run-node.js`) and accuracy scored against real ground truth (`verify/score.py`) — private test data never enters the repo.
+通过 AI 协作完成：Claude 负责设计与验收，Codex 负责实现，另有一套 iOS 独立实现交叉互证。每个里程碑都以可复现基准（`verify/run-node.js`）和真实数据评分（`verify/score.py`）把关——私人测试数据从不进入仓库。
 
-```bash
-cd verify && npm install
-node run-node.js <frames-dir> 4 wechat
-```
-
-## License
+## 许可
 
 MIT
