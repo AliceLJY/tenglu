@@ -8,15 +8,26 @@ Android app, free and open source. No account, no server, no upload. iOS is plan
 
 | Where | Link | Notes |
 |---|---|---|
-| GitHub Release | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB · v0.3.0 · works on every Android CPU type |
+| **GitHub Release (recommended)** | [tenglu-v0.3.0-arm64.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0-arm64.apk) | **40 MB** · v0.3.0 · 64-bit ARM, i.e. virtually every phone sold since 2019 |
+| GitHub Release, full build | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB · v0.3.0 · every Android CPU type, only needed for old 32-bit or x86 devices |
 
-Install: open the APK, allow the install when Android asks, then open **誊录**. To check the file is untouched, the SHA-256 of `tenglu-v0.3.0.apk` is `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`. All versions: [Releases](https://github.com/AliceLJY/tenglu/releases/latest).
+Install: open the APK, allow the install when Android asks, then open **誊录**. SHA-256: `tenglu-v0.3.0-arm64.apk` = `ed8fba2a3be6479e9150dd46d37dabc6b0500c2142d32e9e68945073747a1402`, `tenglu-v0.3.0.apk` = `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`. All versions: [Releases](https://github.com/AliceLJY/tenglu/releases/latest).
 
 ## How to use
 
 1. **Record.** Start your phone's built-in screen recorder, open the chat or comment section you want to keep, scroll slowly and steadily from top to bottom, then stop recording. Keep consecutive screens overlapping — scroll too fast and content gets skipped; Tenglu warns you when its self-check thinks that happened.
 2. **Pick the video.** Open Tenglu, choose **微信** (WeChat chats) or **通用** (generic — comment sections, articles, any scrolling text), tap **选择录屏** and select the recording. Leave the processing path on the default **文本锚点 M3**.
 3. **Take the text.** Wait a few seconds. When it says 处理完成, tap **复制 Markdown**: a speaker-tagged, in-order transcript is on your clipboard. Paste it into notes, a document, or any AI you like.
+
+## See it run
+
+![Tenglu demo: pick a screen recording, wait a few seconds, copy the transcript](docs/media/demo.gif)
+
+Home → processing → result:
+
+![Home screen](docs/media/01-home.png)
+![Processing](docs/media/02-processing.png)
+![Result page](docs/media/03-result.png)
 
 What comes out (illustrative):
 
@@ -32,6 +43,7 @@ What comes out (illustrative):
 - Tested on three real scenarios: a WeChat one-on-one chat, a Xiaohongshu note with its comment section, and a WeChat group chat. Other messengers, dark mode and recordings longer than about 45 seconds are untested — generic mode should work on any scrolling text, but "should" is not "was measured".
 - Portrait phones only. Foldables: fold it first.
 - It transcribes, it doesn't interpret: no summaries, no guessing who replied to whom, no like counts. Sticker and emoji-only messages can't be read by OCR and are not in the output.
+- Generic mode keeps everything the screen shows: in the demo above, the status-bar clock and the note author's name from the fixed header leaked into the transcript, so expect to delete a few lines by hand.
 - On the real conversation used for acceptance, every recognisable message got the right speaker in the right order; the errors were a handful of wrong characters. The exact numbers, and how they were measured, are in [Measured accuracy](#measured-accuracy) below.
 
 ## Why — and why nothing leaves your phone

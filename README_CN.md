@@ -8,15 +8,26 @@
 
 | 从哪下 | 链接 | 说明 |
 |---|---|---|
-| GitHub Release | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB，v0.3.0，所有安卓机型通用 |
+| **GitHub Release（推荐）** | [tenglu-v0.3.0-arm64.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0-arm64.apk) | **40 MB**，v0.3.0，64 位 ARM 手机——2019 年以后卖的手机基本都是 |
+| GitHub Release（全量版） | [tenglu-v0.3.0.apk](https://github.com/AliceLJY/tenglu/releases/download/v0.3.0/tenglu-v0.3.0.apk) | 109 MB，v0.3.0，所有安卓机型通用，只有很老的 32 位机或 x86 设备才需要 |
 
-装法：下载后点开 APK，系统问「是否允许安装」就允许，装好后打开「誊录」。想核对文件没被改过：`tenglu-v0.3.0.apk` 的 SHA-256 是 `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`。历史版本见 [Releases](https://github.com/AliceLJY/tenglu/releases/latest)。
+装法：下载后点开 APK，系统问「是否允许安装」就允许，装好后打开「誊录」。想核对文件没被改过：`tenglu-v0.3.0-arm64.apk` 的 SHA-256 是 `ed8fba2a3be6479e9150dd46d37dabc6b0500c2142d32e9e68945073747a1402`，`tenglu-v0.3.0.apk` 的是 `d5121588c8506f2573e658f5530cd14d14b779d851ab2a35a90b1b7dba79aa44`。历史版本见 [Releases](https://github.com/AliceLJY/tenglu/releases/latest)。
 
 ## 怎么用
 
 1. **录屏。** 用手机自带的屏幕录制，进到要保存的聊天或评论区，从头往下匀速慢慢滑到底，再停止录制。滑慢一点，让前后两屏有重叠——滑太快会漏内容，誊录自检发现了会提示你。
 2. **选视频。** 打开誊录，「模式」选「微信」（聊天记录）或「通用」（评论区、文章等其他滚动内容），点「选择录屏」，选中刚才的视频。处理路径保持默认的「文本锚点 M3」就行。
 3. **拿文字。** 等几秒到十几秒，看到「处理完成」就点「复制 Markdown」，一份带发言人、按顺序的文字记录已经在剪贴板里了，贴到备忘录、文档或任何 AI 里都行。
+
+## 它跑起来是什么样
+
+![誊录演示：选一段录屏，等几秒，复制文字记录](docs/media/demo.gif)
+
+首页 → 处理中 → 结果页：
+
+![首页](docs/media/01-home.png)
+![处理中](docs/media/02-processing.png)
+![结果页](docs/media/03-result.png)
 
 出来的东西长这样（示意）：
 
@@ -32,6 +43,7 @@
 - 实际测过三种场景：微信单聊、小红书笔记加评论区、微信群聊。别的聊天软件、深色模式、超过 45 秒的录屏都还没测——通用模式理论上对任何滚动文本都成立，但理论上不等于测过。
 - 只支持竖屏手机；折叠机合起来用。
 - 只还原、不解读：不总结、不猜「谁回复谁」、不猜点赞数。纯表情、贴纸消息 OCR 读不到，输出里不会有。
+- 通用模式是屏幕上有什么字就收什么字：上面演示那段里，状态栏的时间和顶栏的作者名就混进了记录，拿到手要自己删几行。
 - 用来验收的那段真实微信对话里，能识别的消息发言人全对、顺序全对，错的是个别错别字；具体数字和口径见下面「实测准确率」。
 
 ## 为什么做（以及为什么不联网）
