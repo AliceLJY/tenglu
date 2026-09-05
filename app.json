@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "android": {
       "package": "com.aliceljy.tenglu",
+      "versionCode": 4,
       "blockedPermissions": [
         "android.permission.INTERNET"
       ]
