@@ -4,6 +4,8 @@
 
 安卓 App，免费开源，不用注册、没有服务器、不上传。iPhone 版还在计划中。[English →](README_EN.md)
 
+项目的来龙去脉（为什么做、怎么做的、踩了什么坑）见 [docs/story.md](docs/story.md)。
+
 ## 下载
 
 | 从哪下 | 链接 | 说明 |
