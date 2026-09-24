@@ -126,7 +126,7 @@ Design rules learned the hard way (full engineering log in [PLAN.md](PLAN.md), C
 
 - **Prefer duplication over loss.** Overlap can be deduped; lost content is gone. Displacement estimates are conservative and the output layer cleans up.
 - **Don't infer hidden structure.** Early versions tried to label "reply-to" and like-counts with regexes — 4 errors in 48 comments. M3 never guesses those semantics from text. A group display name becomes a field only when OCR returned it as a geometrically separate row above the bubble; an unclear layout keeps the original text intact.
-- **Every self-check lied at least once.** The only reliable judge was comparing output against decrypted ground truth. If you can't diff against reality, you don't know your accuracy.
+- **Self-checks can lie.** Of the three early self-checks, two reported "no problem" and were wrong; the third flagged suspects but could not tell real ones from false alarms. The hardest judge was diffing output against decrypted ground truth; three other bugs were caught by comparing long-image height with a known-good baseline. If you can't diff against reality, you don't know your accuracy.
 
 ## Status
 
